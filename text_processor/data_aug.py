@@ -316,9 +316,6 @@ def main(argv):
     for idx, row in enumerate(dataframe.iter_rows(named=True)):
         question = row['question']
 
-        if int(row['id']) < 431:
-            continue
-
         scores = get_scores(tfidf_matrix, features, idx)
         question_score = get_question_scores(scores, question)
         question_score.sort(key=lambda x: x[0], reverse=False)
