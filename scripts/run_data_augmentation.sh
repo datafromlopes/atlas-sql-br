@@ -12,26 +12,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-from .utils import Dataset, TfIdfVectorizer
+#!/bin/bash
 
-from .global_variables import (
-    PROJECT_ROOT,
-    CONFIG_PATH,
-    DATASET_FULL_NAME,
-    TRANSLATOR_MODEL,
-    SYNONYMS_MODEL,
-    NLP_VOCAB,
-    NLP_LANGUAGE
-)
-
-__all__ = [
-    'Dataset',
-    'TfIdfVectorizer',
-    'PROJECT_ROOT',
-    'CONFIG_PATH',
-    'DATASET_FULL_NAME',
-    'TRANSLATOR_MODEL',
-    'SYNONYMS_MODEL',
-    'NLP_VOCAB',
-    'NLP_LANGUAGE'
-]
+cd "$(dirname "$0")/.."
+python3 -m text_processor.data_aug

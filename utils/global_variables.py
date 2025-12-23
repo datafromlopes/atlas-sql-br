@@ -27,3 +27,8 @@ BASE_DATASET_FULL_NAME = f"{PROJECT_ROOT}/data/{config['dataset']['base']}.{conf
 
 TF_IDF_MATRIX_NAME = f"{PROJECT_ROOT}/data/{config['tf_idf_matrix']['name']}.{config['tf_idf_matrix']['type']}"
 TF_IDF_FEATURES_NAME = f"{PROJECT_ROOT}/data/{config['tf_idf_features']['name']}.{config['tf_idf_features']['type']}"
+
+TRANSLATOR_MODEL = config['data_aug_params']['translator_model']
+SYNONYMS_MODEL = config['data_aug_params']['synonyms_model']
+NLP_VOCAB = config['data_aug_params']['nlp_vocab']
+NLP_LANGUAGE = config['data_aug_params']['nlp_language']

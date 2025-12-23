@@ -12,8 +12,8 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-from pyspark.sql import SparkSession, DataFrame
 from scipy.sparse import load_npz, csr_matrix, save_npz
+import polars as pl
 from .global_variables import (
     DATASET_FULL_NAME,
     BASE_DATASET_FULL_NAME,
@@ -23,10 +23,13 @@ from .global_variables import (
 
 
 class Dataset:
-    def __init__(self):
-        self.__spark = SparkSession.builder.appName("Dataset").getOrCreate()
 
-    def get_dataset(self, base_dataset=False, partition=None) -> DataFrame:
+    @staticmethod
+    def get_features() -> pl.LazyFrame:
+        return pl.scan_parquet(TF_IDF_FEATURES_NAME)
+
+    @staticmethod
+    def get_dataset(base_dataset=False, partition=None) -> pl.LazyFrame:
         """Get the dataset.
 
         Arguments:
@@ -34,22 +37,19 @@ class Dataset:
             partition (str, optional): if not None, returns the partition. Default is None.
 
         Returns:
-            DataFrame: PySpark DataFrame
+           pl.LazyFrame: Polars LazyFrame
         """
         if base_dataset:
-            return self.__spark.read.parquet(BASE_DATASET_FULL_NAME)
+            return pl.scan_parquet(BASE_DATASET_FULL_NAME)
 
         if partition:
             file = f"{DATASET_FULL_NAME}/source={partition}"
-            return self.__spark.read.parquet(file)
+            return pl.scan_parquet(file)
 
-        return self.__spark.read.parquet(DATASET_FULL_NAME)
+        return pl.scan_parquet(DATASET_FULL_NAME)
 
 
-class TfIdfSparseMatrix:
-    def __init__(self):
-        pass
-
+class TfIdfVectorizer:
     @staticmethod
     def get_tfidf_matrix() -> csr_matrix:
         """Get the TF-IDF matrix.
@@ -57,11 +57,10 @@ class TfIdfSparseMatrix:
         Returns:
             scipy.csr_matrix: Sparse Matrix
         """
-
         return load_npz(TF_IDF_MATRIX_NAME)
 
     @staticmethod
-    def save_tfidf_matrix(sparse_matrix: csr_matrix, features: DataFrame) -> None:
+    def save_tfidf_matrix(sparse_matrix: csr_matrix, features: pl.DataFrame) -> None:
         """Save the TF-IDF matrix and features."""
         save_npz(TF_IDF_MATRIX_NAME, sparse_matrix)
-        features.write.mode("overwrite").parquet(TF_IDF_FEATURES_NAME)
+        features.write_parquet(TF_IDF_FEATURES_NAME)

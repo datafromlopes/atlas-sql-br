@@ -13,15 +13,15 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 from sklearn.feature_extraction.text import TfidfVectorizer
-from utils import get_dataset
+from utils import Dataset
 from polars import LazyFrame, DataFrame
 from scipy.sparse import save_npz
 from utils import PROJECT_ROOT
 from absl import app
 
 
-def get_tfidf_matrix(lazy_frame: LazyFrame) -> tuple:
-    corpus = lazy_frame.collect()['question'].to_list()
+def get_tfidf_matrix(dataframe: DataFrame) -> tuple:
+    corpus = dataframe['question'].to_list()
 
     vectorizer = TfidfVectorizer()
     sparse_matrix = vectorizer.fit_transform(corpus)
@@ -30,8 +30,9 @@ def get_tfidf_matrix(lazy_frame: LazyFrame) -> tuple:
     return sparse_matrix, features
 
 def main(argv):
-    docs = get_dataset()
-    sparse_matrix, features = get_tfidf_matrix(docs)
+    dataset_loader = Dataset()
+    dataframe = dataset_loader.get_dataset(base_dataset=True)
+    sparse_matrix, features = get_tfidf_matrix(dataframe)
     df_features = DataFrame({'features': features})
 
     df_features.write_parquet(f"{PROJECT_ROOT}/data/features.parquet")

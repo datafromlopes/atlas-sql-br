@@ -8,3 +8,8 @@ tf_idf_matrix:
 tf_idf_features:
   name: features
   type: parquet
+data_aug_params:
+  nlp_vocab: pt_core_news_lg
+  nlp_language: pt
+  translator_model: facebook/nllb-200-distilled-600M
+  synonyms_model: neuralmind/bert-base-portuguese-cased
