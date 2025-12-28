@@ -12,7 +12,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-from .utils import Dataset, TfIdfVectorizer
+from .utils import Dataset, TfIdfVectorizer, Logger
 
 from .global_variables import (
     PROJECT_ROOT,
@@ -27,6 +27,7 @@ from .global_variables import (
 __all__ = [
     'Dataset',
     'TfIdfVectorizer',
+    'Logger',
     'PROJECT_ROOT',
     'CONFIG_PATH',
     'DATASET_FULL_NAME',

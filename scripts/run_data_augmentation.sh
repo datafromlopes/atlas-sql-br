@@ -15,4 +15,4 @@
 #!/bin/bash
 
 cd "$(dirname "$0")/.."
-python3 -m text_processor.data_aug
+python3 -m text_processor.data_aug "$@"

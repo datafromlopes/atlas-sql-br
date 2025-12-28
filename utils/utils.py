@@ -21,9 +21,17 @@ from .global_variables import (
     TF_IDF_FEATURES_NAME
 )
 
+# SYSTEM
+import logging
+import sys
 
 class Dataset:
+    """
+    A utility class for accessing and retrieving dataset partitions and features.
 
+    This class provides static methods to lazily load datasets and feature sets
+    from Parquet files, handling file paths and partition logic abstractly.
+    """
     @staticmethod
     def get_features() -> pl.LazyFrame:
         return pl.scan_parquet(TF_IDF_FEATURES_NAME)
@@ -50,6 +58,13 @@ class Dataset:
 
 
 class TfIdfVectorizer:
+    """
+    A utility class for managing the persistence of TF-IDF matrices and features.
+
+    This class provides static methods to save and load TF-IDF sparse matrices
+    and their corresponding feature dataframes to/from disk using predefined
+    file paths.
+    """
     @staticmethod
     def get_tfidf_matrix() -> csr_matrix:
         """Get the TF-IDF matrix.
@@ -64,3 +79,54 @@ class TfIdfVectorizer:
         """Save the TF-IDF matrix and features."""
         save_npz(TF_IDF_MATRIX_NAME, sparse_matrix)
         features.write_parquet(TF_IDF_FEATURES_NAME)
+
+class Logger:
+    """
+    A wrapper class to configure and manage application logging.
+
+    This class initializes a logger instance with a specific name namespace
+    ('app.{pid_name}') and configures output formatting to include the
+    process identifier (pid_name). It ensures that logs are printed to
+    stdout with a standardized timestamp and log level.
+
+    Attributes:
+        pid_name (str): The process identifier name used in log formatting.
+    """
+    def __init__(self, pid_name: str = "augmentation"):
+        self.__pid_name = pid_name
+        self.__logger = logging.getLogger(f"app.{pid_name}")
+
+    def setup_logging(self) -> logging.Logger:
+        """
+        Configures and retrieves the logger instance.
+
+        This method sets the logging level to INFO, clears existing root handlers
+        to prevent duplicate logs, and attaches a formatted StreamHandler to
+        standard output (sys.stdout). It also disables propagation to prevent
+        logs from bubbling up to the root logger.
+
+        Returns:
+            logging.Logger: The fully configured logger instance ready for use.
+
+        Raises:
+            Exception: If an error occurs during the configuration of handlers
+                or formatters.
+        """
+        try:
+            if not self.__logger.handlers:
+                logging.getLogger().handlers.clear()
+                self.__logger.setLevel(logging.INFO)
+
+                handler = logging.StreamHandler(sys.stdout)
+                formatter = logging.Formatter(
+                    f'%(asctime)s - %(levelname)s - {self.__pid_name} - %(message)s'
+                )
+                handler.setFormatter(formatter)
+                self.__logger.handlers.clear()
+                self.__logger.addHandler(handler)
+
+            self.__logger.propagate = False
+
+            return self.__logger
+        except Exception as e:
+            raise Exception(f"Error configuring the logger: {e}")

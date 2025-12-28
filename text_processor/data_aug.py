@@ -14,6 +14,7 @@
 # GNU General Public License for more details.
 
 # UTILS
+from rich.progress import Progress, MofNCompleteColumn, BarColumn, TextColumn, TimeRemainingColumn
 from utils import Dataset, TfIdfVectorizer
 from utils import (
     DATASET_FULL_NAME,
@@ -22,20 +23,25 @@ from utils import (
     NLP_VOCAB,
     NLP_LANGUAGE
 )
-from absl import app
+from utils import Logger
+from absl import app, flags
 import random
+import copy
+import re
 
 # TRANSFORMERS
 from transformers import pipeline
 from transformers.utils import logging as hf_logging
 
 # NLP
+from spacy_wordnet.wordnet_annotator import WordnetAnnotator
 import nltk
 import mlconjug3
 import spacy
-from spacy_wordnet.wordnet_annotator import WordnetAnnotator
 
-# DATA MANIPULATION
+# DATA MANIPULATION & TYPES
+from collections import defaultdict
+import pyarrow.dataset as ds
 import polars as pl
 
 # SYSTEM
@@ -53,25 +59,13 @@ _unmasker = None
 _nlp = None
 _conjugator = None
 
-def setup_logging(pid_name: str) -> logging.Logger:
-    logging.getLogger().handlers.clear()
-    logging.getLogger().setLevel(logging.CRITICAL)
-
-    logger = logging.getLogger("app")
-    logger.setLevel(logging.INFO)
-
-    handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter(
-        f'%(asctime)s - [{pid_name}] - %(levelname)s - %(message)s'
-    )
-    handler.setFormatter(formatter)
-
-    logger.handlers.clear()
-    logger.addHandler(handler)
-
-    logger.propagate = False
-
-    return logger
+FLAGS = flags.FLAGS
+flags.DEFINE_list(
+    "ops",
+    ["all"],
+    "Augmentation operations: swap, delete, insert, synonym, all"
+)
+logger = Logger(pid_name="Data Augmentation").setup_logging()
 
 def initialize_models(device: int = 0) -> None:
     nltk.download('wordnet')
@@ -119,122 +113,198 @@ def get_conjugator():
         _conjugator = mlconjug3.Conjugator(language=NLP_LANGUAGE)
     return _conjugator
 
-def get_data():
-    dataset_loader = Dataset()
-    tfidf_vectorizer = TfIdfVectorizer()
-
-    lf_data = dataset_loader.get_dataset(base_dataset=True)
-    tfidf_matrix = tfidf_vectorizer.get_tfidf_matrix()
-    lf_features = dataset_loader.get_features()
-
-    return lf_data, tfidf_matrix, lf_features
-
-def get_scores(tfidf_matrix, features, index):
-    scores = {}
-    feature_names = features["features"].to_list()
+def get_scores(tfidf_matrix, feature_names, index):
+    scores = []
     for idx, score in zip(tfidf_matrix[index].indices, tfidf_matrix[index].data):
         word = feature_names[idx]
-        scores[word] = score
+        scores.append((score, word))
+    scores.sort(key=lambda x: x[0], reverse=False)
 
     return scores
 
-def get_question_scores(scores, question):
-    words = question.lower().strip(".,?!").split()
-    question_score = [(scores[word],word) for word in words if word in scores]
-
-    return question_score
-
-def get_synonyms_pt(word, top_n=10, target_similarity=0.25):
+def get_allowed_token_idxs(question, question_score):
     nlp = get_nlp()
-    conjugator = get_conjugator()
-
-    token = nlp(word)[0]
-    synsets = token._.wordnet.synsets()
-    synonyms = set()
-
-    is_gerund = "VerbForm=Ger" in token.morph
-
-    for synset in synsets:
-        for lemma in synset.lemmas(lang='por'):
-            synonym_doc = nlp(lemma.name())
-            if not synonym_doc.vector_norm:
-                continue
-
-            similarity = token.similarity(synonym_doc)
-            if similarity < target_similarity:
-                continue
-
-            synonym = lemma.name().lower()
-            if is_gerund:
-                try:
-                    conjugation = conjugator.conjugate(synonym)
-                    gerund = conjugation.conjug_info['Gerúndio']['Gerúndio Gerúndio'][0]
-                    synonyms.add(gerund.lower())
-                except Exception:
-                    synonyms.add(synonym)
-            else:
-                synonyms.add(synonym)
-
-    synonyms.discard(word)
-    synonyms = list(synonyms)
-    synonyms.sort(key=lambda x: x[0], reverse=True)
-
-    return synonyms[:top_n]
-
-def get_allowed_words_scores(question, question_score):
-    nlp = get_nlp()
-
     doc = nlp(question)
-    words = question.lower().strip(".,?!").split()
-    prohibited_words = []
+
+    protected_idxs = set()
 
     for ent in doc.ents:
-        ent_words = ent.text.lower().strip(".,?!").split()
-        start_idx = words.index(ent_words[0])
-        end_idx = words.index(ent_words[-1])
+        if ent.label_ in nlp.pipe_labels['ner']:
+            protected_idxs.update(range(ent.start, ent.end))
 
-        prohibited_words.extend(words[start_idx:end_idx + 1])
+    allowed_token_idxs = [
+        tok.i
+        for tok in doc
+        if tok.is_alpha and tok.i not in protected_idxs
+    ]
 
-    allowed_words = list(set(words) - set(prohibited_words))
-    allowed_words_scores = [item for item in question_score if item[1] in allowed_words]
-    allowed_words_scores.sort(key=lambda x: x[0], reverse=False)
+    return allowed_token_idxs, doc
 
-    return allowed_words_scores
+def rank_allowed_tokens(doc, allowed_idxs, question_score):
+    score_map = {w: s for s, w in question_score}
 
-def get_words(question):
-    clean_words = question.lower().strip(".,?!").split()
-    words = question.lower().split()
+    ranked = [
+        (score_map.get(doc[i].lemma_.lower(), float("inf")), i)
+        for i in allowed_idxs
+    ]
 
-    return words, clean_words
+    ranked.sort(key=lambda x: x[0])
+    return ranked
 
-def random_swap(question, question_score):
-    words, clean_words = get_words(question)
-    allowed_words_scores = get_allowed_words_scores(question, question_score)
+def get_synonyms_pt(feature_names, target_similarity=0.25):
+    nlp = get_nlp()
+    conjugator = get_conjugator()
+    synonyms = defaultdict(set)
 
-    target_word1 = allowed_words_scores[0][1]
-    target_word2 = allowed_words_scores[1][1]
+    for word in feature_names:
+        token = nlp(word)[0]
+        synsets = token._.wordnet.synsets()
 
-    target_idx1 = clean_words.index(target_word1)
-    target_idx2 = clean_words.index(target_word2)
+        is_gerund = "VerbForm=Ger" in token.morph
 
-    clean_words[target_idx1], clean_words[target_idx2] = clean_words[target_idx2], clean_words[target_idx1]
+        for synset in synsets:
+            for lemma in synset.lemmas(lang='por'):
+                synonym_doc = nlp(lemma.name())
+                if not synonym_doc.vector_norm:
+                    continue
 
-    return " ".join(clean_words).capitalize()
+                similarity = token.similarity(synonym_doc)
+                if similarity < target_similarity:
+                    continue
 
-def random_delete(question, question_score):
-    words, clean_words = get_words(question)
-    allowed_words_scores = get_allowed_words_scores(question, question_score)
+                synonym = lemma.name().lower()
+                if is_gerund:
+                    try:
+                        conjugation = conjugator.conjugate(synonym)
+                        gerund = conjugation.conjug_info['Gerúndio']['Gerúndio Gerúndio'][0]
+                        synonyms[word].add(gerund.lower())
+                    except Exception:
+                        synonyms[word].add(synonym)
+                else:
+                    synonyms[word].add(synonym)
 
-    target_word = allowed_words_scores[0][1]
-    target_idx = clean_words.index(target_word)
-    del clean_words[target_idx]
+        synonyms[word].discard(word)
 
-    return " ".join(clean_words).capitalize()
+    return synonyms
 
-def random_insertion(question, question_score):
+def tfidf_safe_swap(args):
+    logger.info("TF-IDF Safe Swap: In Progress...")
+
+    dataframe = args['data']
+    tfidf_matrix = args['tfidf_matrix']
+    feature_names = args['feature_names']
+
+    with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+    ) as progress:
+        task_id = progress.add_task("[green]Processing...", total=dataframe.height)
+
+        augmented_rows = []
+        for idx, row in enumerate(dataframe.iter_rows(named=True)):
+            question = row['question']
+            scores = get_scores(tfidf_matrix, feature_names, idx)
+            allowed_idxs, doc = get_allowed_token_idxs(question, scores)
+
+            ranked = rank_allowed_tokens(doc, allowed_idxs, scores)
+            k = min(5, len(ranked))
+            candidates = [i for _, i in ranked[:k]]
+
+            idx1, idx2 = random.sample(candidates, 2)
+
+            tokens = [t.text_with_ws for t in doc]
+            tokens[idx1], tokens[idx2] = tokens[idx2], tokens[idx1]
+
+            new_question = "".join(tokens)
+
+            augmented_rows.append({
+                "id": row['id'],
+                "question": new_question,
+                "territorial_division": row['territorial_division'],
+                "level": row['level'],
+                "geospatial_functions": row['geospatial_functions'],
+                "sql_code": row['sql_code'],
+                "source": "swap"
+            })
+            progress.update(task_id, advance=1)
+
+    if augmented_rows:
+        logger.info("TF-IDF Safe Swap: Saving...")
+        df_augmented = pl.DataFrame(augmented_rows)
+        arrow_table = df_augmented.to_arrow()
+        ds.write_dataset(
+            arrow_table,
+            base_dir=DATASET_FULL_NAME,
+            format="parquet",
+            partitioning=["source"],
+            existing_data_behavior="delete_matching"
+        )
+        logger.info("TF-IDF Safe Swap: Saved.")
+
+    logger.info("TF-IDF Safe Swap: Done!")
+
+def tfidf_safe_delete(args):
+    logger.info("TF-IDF Safe Delete: In Progress...")
+
+    dataframe = args['data']
+    tfidf_matrix = args['tfidf_matrix']
+    feature_names = args['feature_names']
+
+    with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+    ) as progress:
+        task_id = progress.add_task("[green]Processing...", total=dataframe.height)
+
+        augmented_rows = []
+        for idx, row in enumerate(dataframe.iter_rows(named=True)):
+            question = row['question']
+            scores = get_scores(tfidf_matrix, feature_names, idx)
+            allowed_idxs, doc = get_allowed_token_idxs(question, scores)
+
+            ranked = rank_allowed_tokens(doc, allowed_idxs, scores)
+            idx1 = ranked[0][1]
+            tokens = [t.text_with_ws for t in doc]
+            del tokens[idx1]
+
+            new_question = "".join(tokens)
+
+            augmented_rows.append({
+                "id": row['id'],
+                "question": new_question,
+                "territorial_division": row['territorial_division'],
+                "level": row['level'],
+                "geospatial_functions": row['geospatial_functions'],
+                "sql_code": row['sql_code'],
+                "source": "delete"
+            })
+            progress.update(task_id, advance=1)
+
+    if augmented_rows:
+        logger.info("TF-IDF Safe Delete: Saving...")
+
+        df_augmented = pl.DataFrame(augmented_rows)
+        arrow_table = df_augmented.to_arrow()
+        ds.write_dataset(
+            arrow_table,
+            base_dir=DATASET_FULL_NAME,
+            format="parquet",
+            partitioning=["source"],
+            existing_data_behavior="delete_matching"
+        )
+        logger.info("TF-IDF Safe Delete: Saved.")
+
+    logger.info("TF-IDF Safe Delete: Done!")
+
+def random_insertion(args):
     unmasker = get_unmasker()
-    words, clean_words = get_words(question)
-    allowed_words_scores = get_allowed_words_scores(question, question_score)
+    clean_words = args['clean_words']
+    words = args['words']
+    allowed_words_scores = args['allowed_words_scores']
 
     target_word = allowed_words_scores[-1][1]
     target_idx = clean_words.index(target_word)
@@ -252,27 +322,30 @@ def random_insertion(question, question_score):
     ]
     valid_predictions.sort(key=lambda x: x['score'], reverse=False)
     new_word = valid_predictions[-1]['token_str']
-    clean_words.insert(target_idx + position, new_word)
+    words.insert(target_idx + position, new_word)
 
-    return " ".join(clean_words).capitalize()
+    return " ".join(words).capitalize()
 
-def synonym_replacement(question, question_score):
-    words, clean_words = get_words(question)
-    allowed_words_scores = get_allowed_words_scores(question, question_score)
+def synonym_replacement(args):
+    clean_words = args['clean_words']
+    words = args['words']
+    allowed_words_scores = args['allowed_words_scores']
+    synonyms = args['synonyms']
 
     target_word = allowed_words_scores[-1][1]
     target_idx = clean_words.index(target_word)
-
     word_clean = target_word.lower().strip(".,?!")
-    synonyms = get_synonyms_pt(word_clean)
 
-    if synonyms:
-        clean_words[target_idx] = random.choice(synonyms)
+    if synonyms[word_clean]:
+        synonym_list = list(synonyms[word_clean])
+        words[target_idx] = random.choice(synonym_list)
 
-    return " ".join(clean_words).capitalize()
+    return " ".join(words).capitalize()
 
-def back_translation(question):
+def back_translation(args):
     translator = get_translator()
+
+    question = args['question']
 
     src_lang = 'por_Latn'
     tgt_lang = 'jpn_Jpan'
@@ -294,68 +367,47 @@ def back_translation(question):
     return back
 
 def main(argv):
-    logger = setup_logging("augmentation")
+    del argv
+
+    ops = set(FLAGS.ops)
+
     logger.info("Initializing Data Augmentation.")
-    logger.info("Initializing Models...")
+    logger.info("Initializing Models.")
 
     initialize_models()
 
     logger.info("Models Initialized.")
-    logger.info("Collecting Base Dataset, TFIDF Matrix and Features...")
+    logger.info("Collecting Base Dataset, TFIDF Matrix and Features.")
 
-    lf_data, tfidf_matrix, lf_features = get_data()
+    dataset_loader = Dataset()
+    tfidf_vectorizer = TfIdfVectorizer()
+
+    lf_data = dataset_loader.get_dataset(base_dataset=True)
+    tfidf_matrix = tfidf_vectorizer.get_tfidf_matrix()
+    lf_features = dataset_loader.get_features()
 
     dataframe = lf_data.collect()
-    features = lf_features.collect()
+    feature_names = lf_features.collect()["features"].to_list()
+    synonyms = get_synonyms_pt(feature_names=feature_names)
 
     logger.info("Base Dataset, TFIDF Matrix and Features collected!")
     logger.info(f"Base Dataset: {len(dataframe)} questions.")
-    logger.info("Data Augmentation: In Progress...")
 
-    augmented_rows = []
-    for idx, row in enumerate(dataframe.iter_rows(named=True)):
-        question = row['question']
+    args_dict = {
+        'data': dataframe,
+        'feature_names': feature_names,
+        'synonyms': synonyms,
+        'tfidf_matrix': tfidf_matrix
 
-        scores = get_scores(tfidf_matrix, features, idx)
-        question_score = get_question_scores(scores, question)
-        question_score.sort(key=lambda x: x[0], reverse=False)
+    }
 
-        swap_question = random_swap(question=question, question_score=question_score.copy())
-        delete_question = random_delete(question=question, question_score=question_score.copy())
-        insertion_question = random_insertion(question=question, question_score=question_score.copy())
-        synonym_question = synonym_replacement(question=question, question_score=question_score.copy())
-        translated_question = back_translation(question=question)
+    if "all" in ops:
+        ops = {"swap", "delete", "insert", "synonym"}
+    if "swap" in ops:
+        tfidf_safe_swap(args_dict)
+    if "delete" in ops:
+        tfidf_safe_delete(args_dict)
 
-        questions_map = {
-            'base_dataset': row['question'],
-            'random_swap': swap_question,
-            'random_delete': delete_question,
-            'random_insertion': insertion_question,
-            'synonym_replacement': synonym_question,
-            'back_translation': translated_question
-        }
-
-        augmented_rows = []
-        for source, new_question in questions_map.items():
-            augmented_rows.append({
-                "id": row['id'],
-                "question": new_question,
-                "territorial_division": row['territorial_division'],
-                "level": row['level'],
-                "geospatial_functions": row['geospatial_functions'],
-                "sql_code": row['sql_code'],
-                "source": source
-            })
-        logger.info(f"Processed Row: {row['id']}")
-    logger.info("Data Augmentation: Completed.")
-
-    df_augmented = pl.DataFrame(augmented_rows)
-
-    logger.info("Data Augmentation: Saving...")
-
-    df_augmented.write_parquet(DATASET_FULL_NAME, partition_by="source")
-
-    logger.info("Data Augmentation: Saved!!!")
 
 if __name__ == '__main__':
   app.run(main)
