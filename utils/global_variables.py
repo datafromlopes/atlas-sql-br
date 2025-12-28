@@ -29,6 +29,6 @@ TF_IDF_MATRIX_NAME = f"{PROJECT_ROOT}/data/{config['tf_idf_matrix']['name']}.{co
 TF_IDF_FEATURES_NAME = f"{PROJECT_ROOT}/data/{config['tf_idf_features']['name']}.{config['tf_idf_features']['type']}"
 
 TRANSLATOR_MODEL = config['data_aug_params']['translator_model']
-SYNONYMS_MODEL = config['data_aug_params']['synonyms_model']
+UNMASKER_MODEL = config['data_aug_params']['unmasker_model']
 NLP_VOCAB = config['data_aug_params']['nlp_vocab']
 NLP_LANGUAGE = config['data_aug_params']['nlp_language']

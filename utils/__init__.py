@@ -19,7 +19,7 @@ from .global_variables import (
     CONFIG_PATH,
     DATASET_FULL_NAME,
     TRANSLATOR_MODEL,
-    SYNONYMS_MODEL,
+    UNMASKER_MODEL,
     NLP_VOCAB,
     NLP_LANGUAGE
 )
@@ -32,7 +32,7 @@ __all__ = [
     'CONFIG_PATH',
     'DATASET_FULL_NAME',
     'TRANSLATOR_MODEL',
-    'SYNONYMS_MODEL',
+    'UNMASKER_MODEL',
     'NLP_VOCAB',
     'NLP_LANGUAGE'
 ]

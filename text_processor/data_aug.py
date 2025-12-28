@@ -19,7 +19,7 @@ from utils import Dataset, TfIdfVectorizer
 from utils import (
     DATASET_FULL_NAME,
     TRANSLATOR_MODEL,
-    SYNONYMS_MODEL,
+    UNMASKER_MODEL,
     NLP_VOCAB,
     NLP_LANGUAGE
 )
@@ -43,6 +43,7 @@ import spacy
 from collections import defaultdict
 import pyarrow.dataset as ds
 import polars as pl
+import pyarrow as pa
 
 # SYSTEM
 import logging
@@ -93,7 +94,7 @@ def get_unmasker():
     if _unmasker is None:
         _unmasker = pipeline(
             "fill-mask",
-            model=SYNONYMS_MODEL,
+            model=UNMASKER_MODEL,
             top_k=10
         )
     return _unmasker
@@ -122,7 +123,7 @@ def get_scores(tfidf_matrix, feature_names, index):
 
     return scores
 
-def get_allowed_token_idxs(question, question_score):
+def get_allowed_token_idxs(question, ignore_stopwords=False):
     nlp = get_nlp()
     doc = nlp(question)
 
@@ -132,11 +133,15 @@ def get_allowed_token_idxs(question, question_score):
         if ent.label_ in nlp.pipe_labels['ner']:
             protected_idxs.update(range(ent.start, ent.end))
 
-    allowed_token_idxs = [
-        tok.i
-        for tok in doc
-        if tok.is_alpha and tok.i not in protected_idxs
-    ]
+    allowed_token_idxs = []
+
+    for token in doc:
+        if token.is_alpha and token.i not in protected_idxs:
+            if ignore_stopwords:
+                if not token.is_stop and not token.is_punct:
+                    allowed_token_idxs.append(token.i)
+            else:
+                allowed_token_idxs.append(token.i)
 
     return allowed_token_idxs, doc
 
@@ -187,12 +192,27 @@ def get_synonyms_pt(feature_names, target_similarity=0.25):
 
     return synonyms
 
+def save_data(augmented_rows):
+    arrow_table = pa.Table.from_pylist(augmented_rows)
+    part = ds.partitioning(
+        pa.schema([("source", pa.string())]),
+        flavor="hive"
+    )
+    ds.write_dataset(
+        arrow_table,
+        base_dir=DATASET_FULL_NAME,
+        format="parquet",
+        partitioning=part,
+        existing_data_behavior="delete_matching"
+    )
+
 def tfidf_safe_swap(args):
     logger.info("TF-IDF Safe Swap: In Progress...")
 
     dataframe = args['data']
     tfidf_matrix = args['tfidf_matrix']
     feature_names = args['feature_names']
+    top_lowest = args['top_lowest']
 
     with Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -206,11 +226,10 @@ def tfidf_safe_swap(args):
         for idx, row in enumerate(dataframe.iter_rows(named=True)):
             question = row['question']
             scores = get_scores(tfidf_matrix, feature_names, idx)
-            allowed_idxs, doc = get_allowed_token_idxs(question, scores)
+            allowed_idxs, doc = get_allowed_token_idxs(question)
 
             ranked = rank_allowed_tokens(doc, allowed_idxs, scores)
-            k = min(5, len(ranked))
-            candidates = [i for _, i in ranked[:k]]
+            candidates = [idx for _, idx in ranked[:top_lowest]]
 
             idx1, idx2 = random.sample(candidates, 2)
 
@@ -232,15 +251,7 @@ def tfidf_safe_swap(args):
 
     if augmented_rows:
         logger.info("TF-IDF Safe Swap: Saving...")
-        df_augmented = pl.DataFrame(augmented_rows)
-        arrow_table = df_augmented.to_arrow()
-        ds.write_dataset(
-            arrow_table,
-            base_dir=DATASET_FULL_NAME,
-            format="parquet",
-            partitioning=["source"],
-            existing_data_behavior="delete_matching"
-        )
+        save_data(augmented_rows)
         logger.info("TF-IDF Safe Swap: Saved.")
 
     logger.info("TF-IDF Safe Swap: Done!")
@@ -251,6 +262,7 @@ def tfidf_safe_delete(args):
     dataframe = args['data']
     tfidf_matrix = args['tfidf_matrix']
     feature_names = args['feature_names']
+    top_lowest = args['top_lowest']
 
     with Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -264,10 +276,12 @@ def tfidf_safe_delete(args):
         for idx, row in enumerate(dataframe.iter_rows(named=True)):
             question = row['question']
             scores = get_scores(tfidf_matrix, feature_names, idx)
-            allowed_idxs, doc = get_allowed_token_idxs(question, scores)
+            allowed_idxs, doc = get_allowed_token_idxs(question)
 
             ranked = rank_allowed_tokens(doc, allowed_idxs, scores)
-            idx1 = ranked[0][1]
+            candidates = [idx for _, idx in ranked[:top_lowest]]
+            idx1 = random.sample(candidates, 1)[0]
+
             tokens = [t.text_with_ws for t in doc]
             del tokens[idx1]
 
@@ -286,61 +300,144 @@ def tfidf_safe_delete(args):
 
     if augmented_rows:
         logger.info("TF-IDF Safe Delete: Saving...")
-
-        df_augmented = pl.DataFrame(augmented_rows)
-        arrow_table = df_augmented.to_arrow()
-        ds.write_dataset(
-            arrow_table,
-            base_dir=DATASET_FULL_NAME,
-            format="parquet",
-            partitioning=["source"],
-            existing_data_behavior="delete_matching"
-        )
+        save_data(augmented_rows)
         logger.info("TF-IDF Safe Delete: Saved.")
 
     logger.info("TF-IDF Safe Delete: Done!")
 
-def random_insertion(args):
+def tfidf_safe_insert(args):
+    logger.info("TF-IDF Safe Insert: In Progress...")
+
     unmasker = get_unmasker()
-    clean_words = args['clean_words']
-    words = args['words']
-    allowed_words_scores = args['allowed_words_scores']
 
-    target_word = allowed_words_scores[-1][1]
-    target_idx = clean_words.index(target_word)
-    masked_words = clean_words.copy()
+    dataframe = args['data']
+    tfidf_matrix = args['tfidf_matrix']
+    feature_names = args['feature_names']
+    top_highest = args['top_highest']
+    top_lowest = args['top_lowest']
 
-    position = random.randint(0, 1)
-    masked_words.insert(target_idx + position, '[MASK]')
-    masked_sentence = " ".join(masked_words)
+    with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+    ) as progress:
+        task_id = progress.add_task("[green]Processing...", total=dataframe.height)
 
-    predictions = unmasker(masked_sentence)
+        augmented_rows = []
+        for idx, row in enumerate(dataframe.iter_rows(named=True)):
+            question = row['question']
 
-    valid_predictions = [
-        pred for pred in predictions
-        if pred['token_str'].strip() and pred['token_str'].isalpha() and pred['token_str'] not in clean_words
-    ]
-    valid_predictions.sort(key=lambda x: x['score'], reverse=False)
-    new_word = valid_predictions[-1]['token_str']
-    words.insert(target_idx + position, new_word)
+            scores = get_scores(tfidf_matrix, feature_names, idx)
+            allowed_idxs, doc = get_allowed_token_idxs(question)
+            ranked = rank_allowed_tokens(doc, allowed_idxs, scores)
 
-    return " ".join(words).capitalize()
+            candidates = [i for _, i in ranked[:top_lowest]]
+            idx1 = random.sample(candidates, 1)[0]
 
-def synonym_replacement(args):
-    clean_words = args['clean_words']
-    words = args['words']
-    allowed_words_scores = args['allowed_words_scores']
-    synonyms = args['synonyms']
+            tokens = [t.text_with_ws for t in doc]
+            position = random.randint(0, 1)
 
-    target_word = allowed_words_scores[-1][1]
-    target_idx = clean_words.index(target_word)
-    word_clean = target_word.lower().strip(".,?!")
+            masked_tokens = tokens.copy()
+            masked_tokens.insert(idx1 + position, '[MASK]')
+            masked_sentence = "".join(masked_tokens)
 
-    if synonyms[word_clean]:
-        synonym_list = list(synonyms[word_clean])
-        words[target_idx] = random.choice(synonym_list)
+            predictions = unmasker(masked_sentence)
 
-    return " ".join(words).capitalize()
+            valid_predictions = [
+                pred for pred in predictions if pred['token_str'] not in tokens
+            ]
+            valid_predictions.sort(key=lambda x: x['score'], reverse=True)
+
+            preds = [pred['token_str'] for pred in valid_predictions[:top_highest]]
+            new_word = random.sample(preds, 1)[0]
+
+            tokens.insert(idx1 + position, f"{new_word} ")
+            new_question = "".join(tokens)
+
+            augmented_rows.append({
+                "id": row['id'],
+                "question": new_question,
+                "territorial_division": row['territorial_division'],
+                "level": row['level'],
+                "geospatial_functions": row['geospatial_functions'],
+                "sql_code": row['sql_code'],
+                "source": "insert"
+            })
+            progress.update(task_id, advance=1)
+
+    if augmented_rows:
+        logger.info("TF-IDF Safe Insert: Saving...")
+        save_data(augmented_rows)
+        logger.info("TF-IDF Safe Insert: Saved.")
+
+    logger.info("TF-IDF Safe Insert: Done!")
+
+def tfidf_safe_synonym_replacement(args):
+    logger.info("TF-IDF Safe Synonym Replacement: In Progress...")
+
+    dataframe = args['data']
+    tfidf_matrix = args['tfidf_matrix']
+    feature_names = args['feature_names']
+    list_synonyms = args['synonyms']
+    top_highest = args['top_highest']
+    top_lowest = args['top_lowest']
+
+    with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+    ) as progress:
+        task_id = progress.add_task("[green]Processing...", total=dataframe.height)
+
+        augmented_rows = []
+        for idx, row in enumerate(dataframe.iter_rows(named=True)):
+            question = row['question']
+
+            scores = get_scores(tfidf_matrix, feature_names, idx)
+            allowed_idxs, doc = get_allowed_token_idxs(question, ignore_stopwords=True)
+            ranked = rank_allowed_tokens(doc, allowed_idxs, scores)
+            tokens = [t.text_with_ws for t in doc]
+
+            candidates = [i for _, i in ranked[-top_highest:]]
+            if not candidates:
+                raise Exception(f"There is no candidates for replacement.")
+
+            synonyms = []
+            idx = None
+            while not synonyms and candidates:
+                idx = random.sample(candidates, 1)[0]
+                word = tokens[idx].strip()
+                synonyms = list_synonyms[word]
+
+                if not synonyms:
+                    candidates.remove(idx)
+
+            if synonyms:
+                new_word = random.sample(synonyms, 1)[0]
+                tokens[idx] = f"{new_word} "
+                new_question = "".join(tokens)
+            else:
+                new_question = question
+
+            augmented_rows.append({
+                "id": row['id'],
+                "question": new_question,
+                "territorial_division": row['territorial_division'],
+                "level": row['level'],
+                "geospatial_functions": row['geospatial_functions'],
+                "sql_code": row['sql_code'],
+                "source": "synonym"
+            })
+            progress.update(task_id, advance=1)
+
+        if augmented_rows:
+            logger.info("TF-IDF Safe Synonym Replacement: Saving...")
+            save_data(augmented_rows)
+            logger.info("TF-IDF Safe Synonym Replacement: Saved.")
+
+        logger.info("TF-IDF Safe Synonym Replacement: Done!")
 
 def back_translation(args):
     translator = get_translator()
@@ -397,8 +494,9 @@ def main(argv):
         'data': dataframe,
         'feature_names': feature_names,
         'synonyms': synonyms,
-        'tfidf_matrix': tfidf_matrix
-
+        'tfidf_matrix': tfidf_matrix,
+        'top_lowest': 10,
+        'top_highest': 10
     }
 
     if "all" in ops:
@@ -407,6 +505,10 @@ def main(argv):
         tfidf_safe_swap(args_dict)
     if "delete" in ops:
         tfidf_safe_delete(args_dict)
+    if "insert" in ops:
+        tfidf_safe_insert(args_dict)
+    if "synonym" in ops:
+        tfidf_safe_synonym_replacement(args_dict)
 
 
 if __name__ == '__main__':
