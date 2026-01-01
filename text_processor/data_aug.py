@@ -18,16 +18,18 @@ from rich.progress import Progress, MofNCompleteColumn, BarColumn, TextColumn, T
 from utils import Dataset, TfIdfVectorizer
 from utils import (
     DATASET_FULL_NAME,
+    DATASET_TYPE,
     TRANSLATOR_MODEL,
     UNMASKER_MODEL,
     NLP_VOCAB,
-    NLP_LANGUAGE
+    NLP_LANGUAGE,
+    SRC_LANG,
+    TGT_LANG
 )
 from utils import Logger
 from absl import app, flags
 import random
 import copy
-import re
 
 # TRANSFORMERS
 from transformers import pipeline
@@ -42,12 +44,10 @@ import spacy
 # DATA MANIPULATION & TYPES
 from collections import defaultdict
 import pyarrow.dataset as ds
-import polars as pl
 import pyarrow as pa
 
 # SYSTEM
 import logging
-import sys
 import warnings
 
 logging.getLogger("accelerate").setLevel(logging.ERROR)
@@ -201,7 +201,7 @@ def save_data(augmented_rows):
     ds.write_dataset(
         arrow_table,
         base_dir=DATASET_FULL_NAME,
-        format="parquet",
+        format=DATASET_TYPE,
         partitioning=part,
         existing_data_behavior="delete_matching"
     )
@@ -381,7 +381,6 @@ def tfidf_safe_synonym_replacement(args):
     feature_names = args['feature_names']
     list_synonyms = args['synonyms']
     top_highest = args['top_highest']
-    top_lowest = args['top_lowest']
 
     with Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -440,28 +439,62 @@ def tfidf_safe_synonym_replacement(args):
         logger.info("TF-IDF Safe Synonym Replacement: Done!")
 
 def back_translation(args):
+    logger.info("Back Translation: In Progress...")
+
     translator = get_translator()
+    dataframe = args['data']
 
-    question = args['question']
+    with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+    ) as progress:
+        task_id = progress.add_task("[green]Processing...", total=dataframe.height)
 
-    src_lang = 'por_Latn'
-    tgt_lang = 'jpn_Jpan'
+        augmented_rows = []
+        batch_size = 5
+        for i in range(0, dataframe.height, batch_size):
+            batch_df = dataframe[i: i + batch_size]
+            batch_questions = batch_df['question'].to_list()
 
-    pivot = translator(
-        question,
-        src_lang=src_lang,
-        tgt_lang=tgt_lang,
-        max_length=256,
-    )[0]["translation_text"]
+            pivot_results = translator(
+                batch_questions,
+                src_lang=SRC_LANG,
+                tgt_lang=TGT_LANG,
+                max_length=256,
+                batch_size=batch_size
+            )
+            pivot_texts = [res['translation_text'] for res in pivot_results]
 
-    back = translator(
-        pivot,
-        src_lang=tgt_lang,
-        tgt_lang=src_lang,
-        max_length=256,
-    )[0]["translation_text"]
+            back_results = translator(
+                pivot_texts,
+                src_lang=TGT_LANG,
+                tgt_lang=SRC_LANG,
+                max_length=256,
+                batch_size=batch_size
+            )
+            back_texts = [res['translation_text'] for res in back_results]
 
-    return back
+            for idx, row in enumerate(batch_df.iter_rows(named=True)):
+                augmented_rows.append({
+                    "id": row['id'],
+                    "question": back_texts[idx],
+                    "territorial_division": row['territorial_division'],
+                    "level": row['level'],
+                    "geospatial_functions": row['geospatial_functions'],
+                    "sql_code": row['sql_code'],
+                    "source": "translate"
+                })
+            progress.update(task_id, advance=len(batch_df))
+
+        if augmented_rows:
+            logger.info("Back Translation: Saving...")
+            save_data(augmented_rows)
+            logger.info("Back Translation: Saved.")
+
+        logger.info("Back Translation: Done!")
+
 
 def main(argv):
     del argv
@@ -500,15 +533,17 @@ def main(argv):
     }
 
     if "all" in ops:
-        ops = {"swap", "delete", "insert", "synonym"}
+        ops = {"swap", "delete", "insert", "synonym", "translate"}
     if "swap" in ops:
-        tfidf_safe_swap(args_dict)
+        tfidf_safe_swap(copy.deepcopy(args_dict))
     if "delete" in ops:
-        tfidf_safe_delete(args_dict)
+        tfidf_safe_delete(copy.deepcopy(args_dict))
     if "insert" in ops:
-        tfidf_safe_insert(args_dict)
+        tfidf_safe_insert(copy.deepcopy(args_dict))
     if "synonym" in ops:
-        tfidf_safe_synonym_replacement(args_dict)
+        tfidf_safe_synonym_replacement(copy.deepcopy(args_dict))
+    if "translate" in ops:
+        back_translation(copy.deepcopy(args_dict))
 
 
 if __name__ == '__main__':

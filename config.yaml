@@ -13,3 +13,5 @@ data_aug_params:
   nlp_language: pt
   translator_model: facebook/nllb-200-distilled-600M
   unmasker_model: neuralmind/bert-base-portuguese-cased
+  src_lang: por_Latn
+  tgt_lang: deu_Latn

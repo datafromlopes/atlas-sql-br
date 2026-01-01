@@ -18,10 +18,13 @@ from .global_variables import (
     PROJECT_ROOT,
     CONFIG_PATH,
     DATASET_FULL_NAME,
+    DATASET_TYPE,
     TRANSLATOR_MODEL,
     UNMASKER_MODEL,
     NLP_VOCAB,
-    NLP_LANGUAGE
+    NLP_LANGUAGE,
+    SRC_LANG,
+    TGT_LANG
 )
 
 __all__ = [
@@ -31,8 +34,11 @@ __all__ = [
     'PROJECT_ROOT',
     'CONFIG_PATH',
     'DATASET_FULL_NAME',
+    'DATASET_TYPE',
     'TRANSLATOR_MODEL',
     'UNMASKER_MODEL',
     'NLP_VOCAB',
-    'NLP_LANGUAGE'
+    'NLP_LANGUAGE',
+    'SRC_LANG',
+    'TGT_LANG'
 ]
