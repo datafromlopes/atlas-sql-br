@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (C) 2025  Diego Lopes
+# Copyright (C) 2026  Diego Lopes
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
 
 # UTILS
 from rich.progress import Progress, MofNCompleteColumn, BarColumn, TextColumn, TimeRemainingColumn
-from utils import Dataset, TfIdfVectorizer
+from utils import GeoDataset, TfIdfVectorizer
 from utils import (
     DATASET_FULL_NAME,
     DATASET_TYPE,
@@ -509,7 +509,7 @@ def main(argv):
     logger.info("Models Initialized.")
     logger.info("Collecting Base Dataset, TFIDF Matrix and Features.")
 
-    dataset_loader = Dataset()
+    dataset_loader = GeoDataset()
     tfidf_vectorizer = TfIdfVectorizer()
 
     lf_data = dataset_loader.get_dataset(base_dataset=True)

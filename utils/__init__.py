@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (C) 2025  Diego Lopes
+# Copyright (C) 2026  Diego Lopes
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -12,7 +12,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-from .utils import Dataset, TfIdfVectorizer, Logger
+from .utils import GeoDataset, TfIdfVectorizer, Logger
 
 from .global_variables import (
     PROJECT_ROOT,
@@ -24,11 +24,13 @@ from .global_variables import (
     NLP_VOCAB,
     NLP_LANGUAGE,
     SRC_LANG,
-    TGT_LANG
+    TGT_LANG,
+    BASE_MODEL,
+    EPOCHS
 )
 
 __all__ = [
-    'Dataset',
+    'GeoDataset',
     'TfIdfVectorizer',
     'Logger',
     'PROJECT_ROOT',
@@ -40,5 +42,7 @@ __all__ = [
     'NLP_VOCAB',
     'NLP_LANGUAGE',
     'SRC_LANG',
-    'TGT_LANG'
+    'TGT_LANG',
+    'BASE_MODEL',
+    'EPOCHS'
 ]

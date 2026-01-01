@@ -15,3 +15,6 @@ data_aug_params:
   unmasker_model: neuralmind/bert-base-portuguese-cased
   src_lang: por_Latn
   tgt_lang: deu_Latn
+finetuning_params:
+  base_model: t5-small
+  epochs: 3

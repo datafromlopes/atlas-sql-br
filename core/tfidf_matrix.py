@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (C) 2025  Diego Lopes
+# Copyright (C) 2026  Diego Lopes
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,7 +13,7 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 from sklearn.feature_extraction.text import TfidfVectorizer
-from utils import Dataset
+from utils import GeoDataset
 from polars import LazyFrame, DataFrame
 from scipy.sparse import save_npz
 from utils import PROJECT_ROOT
@@ -30,7 +30,7 @@ def get_tfidf_matrix(dataframe: DataFrame) -> tuple:
     return sparse_matrix, features
 
 def main(argv):
-    dataset_loader = Dataset()
+    dataset_loader = GeoDataset()
     dataframe = dataset_loader.get_dataset(base_dataset=True)
     sparse_matrix, features = get_tfidf_matrix(dataframe)
     df_features = DataFrame({'features': features})

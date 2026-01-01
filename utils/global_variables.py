@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (C) 2025  Diego Lopes
+# Copyright (C) 2026  Diego Lopes
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -34,3 +34,6 @@ NLP_VOCAB = config['data_aug_params']['nlp_vocab']
 NLP_LANGUAGE = config['data_aug_params']['nlp_language']
 SRC_LANG = config['data_aug_params']['src_lang']
 TGT_LANG = config['data_aug_params']['tgt_lang']
+
+BASE_MODEL = config['finetuning_params']['base_model']
+EPOCHS = config['finetuning_params']['epochs']

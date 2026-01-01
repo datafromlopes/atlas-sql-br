@@ -15,4 +15,4 @@
 #!/bin/bash
 
 cd "$(dirname "$0")/.."
-python3 -m text_processor.tfidf_matrix
+python3 -m core.tfidf_matrix
