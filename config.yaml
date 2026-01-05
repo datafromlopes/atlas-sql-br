@@ -18,3 +18,5 @@ data_aug_params:
 finetuning_params:
   base_model: t5-small
   epochs: 3
+  batch_size: 2
+  grad_accum: 4

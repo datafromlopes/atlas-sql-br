@@ -26,7 +26,10 @@ from .global_variables import (
     SRC_LANG,
     TGT_LANG,
     BASE_MODEL,
-    EPOCHS
+    EPOCHS,
+    BATCH_SIZE,
+    GRAD_ACCUM,
+    MODELS_PATH
 )
 
 __all__ = [
@@ -44,5 +47,8 @@ __all__ = [
     'SRC_LANG',
     'TGT_LANG',
     'BASE_MODEL',
-    'EPOCHS'
+    'EPOCHS',
+    'BATCH_SIZE',
+    'GRAD_ACCUM',
+    'MODELS_PATH'
 ]

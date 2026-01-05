@@ -12,40 +12,63 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
-    T5ForConditionalGeneration,
     Trainer,
-    TrainingArguments,
-    DataCollatorForSeq2Seq
+    TrainingArguments
 )
 from peft import (
     get_peft_model,
     LoraConfig,
     PrefixTuningConfig,
     PromptTuningConfig,
-    TaskType,
-    PeftModel
+    IA3Config,
+    AdaLoraConfig,
+    TaskType
 )
 import polars as pl
-from typing import Dict, List
 from absl import app, flags
-import os
-
+import numpy as np
 from utils import (
     BASE_MODEL,
-    EPOCHS
+    EPOCHS,
+    BATCH_SIZE,
+    GRAD_ACCUM,
+    MODELS_PATH
 )
 from utils import GeoDataset
+import gc
+import os
+import json
+import math
+from utils import Logger
 
 # =======================
-# 1. DATA PREPARATION
+# 0. SETTINGS
 # =======================
+
+_device = None
+
+if torch.backends.mps.is_available():
+    os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
+    _device = torch.device("mps")
+else:
+    _device = torch.device("cpu")
+
+def clear_memory():
+    gc.collect()
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+
+logger = Logger(pid_name="Fine-Tuning Models").setup_logging()
+
+# =============================================================================================
+# DATA PREPARATION
+# =============================================================================================
 
 class Text2SQLDataset(Dataset):
     def __init__(self, data: pl.DataFrame, tokenizer, max_length=512):
@@ -92,6 +115,29 @@ class Text2SQLDataset(Dataset):
         }
 
 
+class OptimizedDataCollator:
+    def __init__(self, tokenizer, model=None, padding=True):
+        self.tokenizer = tokenizer
+        self.model = model
+        self.padding = padding
+
+    def __call__(self, features):
+        input_ids = np.array([f['input_ids'].numpy() for f in features])
+        attention_mask = np.array([f['attention_mask'].numpy() for f in features])
+        labels = np.array([f['labels'].numpy() for f in features])
+
+        batch = {
+            'input_ids': torch.from_numpy(input_ids),
+            'attention_mask': torch.from_numpy(attention_mask),
+            'labels': torch.from_numpy(labels)
+        }
+
+        batch['labels'][batch['labels'] == self.tokenizer.pad_token_id] = -100
+
+        return batch
+
+
+
 def prepare_data(df: pl.DataFrame, tokenizer, train_split=0.8):
     n_train = int(len(df) * train_split)
 
@@ -103,10 +149,13 @@ def prepare_data(df: pl.DataFrame, tokenizer, train_split=0.8):
 
     return train_dataset, val_dataset
 
-# =======================
-# 2. LORA MODEL
-# =======================
+# =============================================================================================
+# TRAINING MODELS
+# =============================================================================================
 
+# =======================
+# 1. LORA MODEL
+# =======================
 def create_lora_model(base_model_name="t5-small"):
     model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
 
@@ -115,7 +164,8 @@ def create_lora_model(base_model_name="t5-small"):
         r=8,  # Rank
         lora_alpha=32,
         lora_dropout=0.1,
-        target_modules=["q", "v"]  # LoRA Layers
+        target_modules=["q", "v"],  # LoRA Layers
+        inference_mode=False
     )
 
     model = get_peft_model(model, lora_config)
@@ -123,18 +173,37 @@ def create_lora_model(base_model_name="t5-small"):
 
     return model
 
+# =======================
+# 2. ADALORA MODEL
+# =======================
+def create_adalora_model(total_steps, base_model_name="t5-small"):
+    model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
+
+    config = AdaLoraConfig(
+        task_type=TaskType.SEQ_2_SEQ_LM,
+        r=8,
+        lora_alpha=16,
+        total_step=total_steps,
+        target_modules=["q", "v"],
+        inference_mode=False
+    )
+
+    model = get_peft_model(model, config)
+    model.print_trainable_parameters()
+
+    return model
 
 # =======================
 # 3. PREFIX-TUNING MODEL
 # =======================
-
-def create_prefix_tuning_model(base_model_name="t5-small"):
+def create_prefix_model(base_model_name="t5-small"):
     model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
 
     prefix_config = PrefixTuningConfig(
         task_type=TaskType.SEQ_2_SEQ_LM,
         num_virtual_tokens=20,
-        prefix_projection=True
+        prefix_projection=True,
+        inference_mode=False
     )
 
     model = get_peft_model(model, prefix_config)
@@ -142,12 +211,10 @@ def create_prefix_tuning_model(base_model_name="t5-small"):
 
     return model
 
-
 # =======================
 # 4. PROMPT TUNING MODEL
 # =======================
-
-def create_prompt_tuning_model(base_model_name="t5-small", tokenizer=None):
+def create_prompt_model(base_model_name="t5-small"):
     model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
 
     prompt_config = PromptTuningConfig(
@@ -155,7 +222,8 @@ def create_prompt_tuning_model(base_model_name="t5-small", tokenizer=None):
         num_virtual_tokens=20,
         prompt_tuning_init="TEXT",
         prompt_tuning_init_text="Traduza a pergunta para SQL:",
-        tokenizer_name_or_path=base_model_name
+        tokenizer_name_or_path=base_model_name,
+        inference_mode=False
     )
 
     model = get_peft_model(model, prompt_config)
@@ -163,79 +231,52 @@ def create_prompt_tuning_model(base_model_name="t5-small", tokenizer=None):
 
     return model
 
-
 # =======================
-# 5. ADAPTER MODEL
+# 5. PROMPT TUNING V2 MODEL
 # =======================
-
-class AdapterLayer(nn.Module):
-    def __init__(self, hidden_size, adapter_size=64):
-        super().__init__()
-        self.down_project = nn.Linear(hidden_size, adapter_size)
-        self.up_project = nn.Linear(adapter_size, hidden_size)
-        self.activation = nn.ReLU()
-        self.dropout = nn.Dropout(0.1)
-
-    def forward(self, x):
-        residual = x
-        x = self.down_project(x)
-        x = self.activation(x)
-        x = self.dropout(x)
-        x = self.up_project(x)
-        return x + residual
-
-
-def add_adapters_to_model(model, adapter_size=64):
-    for param in model.parameters():
-        param.requires_grad = False
-
-    hidden_size = model.config.d_model
-
-    for i, layer in enumerate(model.encoder.block):
-        adapter = AdapterLayer(hidden_size, adapter_size)
-        layer.adapter = adapter
-
-        original_forward = layer.forward
-
-        def forward_with_adapter(self, hidden_states, *args, **kwargs):
-            output = original_forward(hidden_states, *args, **kwargs)
-            if isinstance(output, tuple):
-                hidden_states = output[0]
-                hidden_states = self.adapter(hidden_states)
-                return (hidden_states,) + output[1:]
-            else:
-                return self.adapter(output)
-
-        layer.forward = lambda *args, s=layer, **kwargs: forward_with_adapter(s, *args, **kwargs)
-
-    trainable_params = 0
-    total_params = 0
-    for name, param in model.named_parameters():
-        total_params += param.numel()
-        if 'adapter' in name:
-            param.requires_grad = True
-            trainable_params += param.numel()
-
-    return model
-
-
-# =======================
-# 6. FULL FINE-TUNING MODEL
-# =======================
-
-def create_full_finetuning_model(base_model_name="t5-small"):
+def create_ptuning_v2_model(base_model_name="t5-small", num_virtual_tokens=20):
     model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
 
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    total_params = sum(p.numel() for p in model.parameters())
+    prompt_config = PromptTuningConfig(
+        task_type=TaskType.SEQ_2_SEQ_LM,
+        num_virtual_tokens=num_virtual_tokens,
+        prompt_tuning_init="RANDOM",
+        inference_mode=False
+    )
+
+    model = get_peft_model(model, prompt_config)
+    model.print_trainable_parameters()
 
     return model
 
+# =======================
+# 6. IA3 TUNING MODEL
+# =======================
+def create_ia3_model(base_model_name="t5-small"):
+    model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
+
+    ia3_config = IA3Config(
+        task_type=TaskType.SEQ_2_SEQ_LM,
+        inference_mode=False,
+        target_modules=["q", "k", "v", "o", "wi", "wo"]
+    )
+
+    model = get_peft_model(model, ia3_config)
+    model.print_trainable_parameters()
+
+    return model
 
 # =======================
-# 7. PYTORCH MODEL - FROM SCRATCH
+# 7. FULL FINE-TUNING MODEL
 # =======================
+def create_full_model(base_model_name="t5-small"):
+    model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
 
+    return model
+
+# =======================
+# 8. PYTORCH MODEL - FROM SCRATCH
+# =======================
 class SimpleSeq2SeqModel(nn.Module):
     def __init__(self, vocab_size, embed_dim=256, hidden_dim=512, num_layers=2):
         super().__init__()
@@ -276,15 +317,17 @@ class SimpleSeq2SeqModel(nn.Module):
             # Inference mode (simplified)
             return encoder_output
 
-
+# =============================================================================================
+# TRAINING FUNCTIONS
+# =============================================================================================
 def train_from_scratch(train_dataset, val_dataset, tokenizer, epochs=3):
     vocab_size = len(tokenizer)
     model = SimpleSeq2SeqModel(vocab_size)
 
-    device = torch.device('mps' if torch.mps.is_available() else 'cpu')
-    model.to(device)
+    global _device
+    model.to(_device)
 
-    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
 
@@ -295,8 +338,8 @@ def train_from_scratch(train_dataset, val_dataset, tokenizer, epochs=3):
         total_loss = 0
 
         for batch_idx, batch in enumerate(train_loader):
-            input_ids = batch['input_ids'].to(device)
-            labels = batch['labels'].to(device)
+            input_ids = batch['input_ids'].to(_device)
+            labels = batch['labels'].to(_device)
 
             optimizer.zero_grad()
 
@@ -320,27 +363,36 @@ def train_from_scratch(train_dataset, val_dataset, tokenizer, epochs=3):
 
     return model
 
-# =======================
-# 8. TRAINING FUNCTIONS
-# =======================
+def train_model(
+        model,
+        train_dataset,
+        val_dataset,
+        tokenizer,
+        output_dir,
+        load_best_model_at_end=False
+):
+    global _device
+    model.to(_device)
 
-def train_model(model, train_dataset, val_dataset, tokenizer, output_dir, epochs=3):
     training_args = TrainingArguments(
-        output_dir=output_dir,
-        num_train_epochs=epochs,
-        per_device_train_batch_size=8,
-        per_device_eval_batch_size=8,
+        output_dir=f"{output_dir}/checkpoints",
+        num_train_epochs=EPOCHS,
+        per_device_train_batch_size=BATCH_SIZE,
+        per_device_eval_batch_size=BATCH_SIZE,
+        gradient_accumulation_steps=GRAD_ACCUM,
         warmup_steps=100,
         weight_decay=0.01,
         logging_dir=f'{output_dir}/logs',
         logging_steps=50,
         eval_strategy="epoch",
         save_strategy="epoch",
-        load_best_model_at_end=True,
+        fp16=False,
+        gradient_checkpointing=False,
+        load_best_model_at_end=load_best_model_at_end,
         report_to="none"
     )
 
-    data_collator = DataCollatorForSeq2Seq(tokenizer, model=model)
+    data_collator = OptimizedDataCollator(tokenizer, model=model)
 
     trainer = Trainer(
         model=model,
@@ -353,66 +405,107 @@ def train_model(model, train_dataset, val_dataset, tokenizer, output_dir, epochs
 
     return trainer
 
-# =======================
-# 9. MAIN PIPELINE
-# =======================
+def save_training_artifacts(
+        trainer: Trainer,
+        tokenizer,
+        output_dir: str,
+        save_best: bool = False,
+        metadata: dict | None = None
+):
+    model_to_save = (trainer.model if not save_best else trainer.model)
+    model_to_save.save_pretrained(output_dir)
+    tokenizer.save_pretrained(output_dir)
 
+    if trainer.state.log_history:
+        with open(os.path.join(output_dir, "training_metrics.json"), "w") as f:
+            json.dump(trainer.state.log_history, f, indent=2)
+
+    if metadata:
+        with open(os.path.join(output_dir, "metadata.json"), "w") as f:
+            json.dump(metadata, f, indent=2)
+
+    trainer.state.save_to_json(os.path.join(output_dir, "trainer_state.json"))
+
+# =============================================================================================
+# MAIN PIPELINE
+# =============================================================================================
 def main(argv):
     del argv
-    df = GeoDataset.get_dataset()
+    df = GeoDataset.get_dataset().collect()
 
     print(f"Dataset: {df.shape}")
 
     # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
-
     train_dataset, val_dataset = prepare_data(df, tokenizer)
 
-    # =======================
-    # EXPERIMENT 1: LoRA
-    # =======================
-    model_lora = create_lora_model(BASE_MODEL)
-    train_model(model_lora, train_dataset, val_dataset, tokenizer, "./models/lora", EPOCHS)
+    finetuning_models = [
+        'LORA',
+        'ADALORA',
+        'PREFIX',
+        'PROMPT',
+        'IA3',
+        'FULL'
+    ]
 
-    # =======================
-    # EXPERIMENT 2: Prefix-Tuning
-    # =======================
-    model_prefix = create_prefix_tuning_model(BASE_MODEL)
-    train_model(model_prefix, train_dataset, val_dataset, tokenizer, "./models/prefix", EPOCHS)
+    for finetuning_model in finetuning_models:
+        clear_memory()
+        logger.banner(f"STARTING {finetuning_model} TRAINING")
+        logger.info("Loading model")
 
-    # =======================
-    # EXPERIMENT 3: Prompt Tuning
-    # =======================
-    model_prompt = create_prompt_tuning_model(BASE_MODEL, tokenizer)
-    train_model(model_prompt, train_dataset, val_dataset, tokenizer, "./models/prompt", EPOCHS)
+        model = None
+        match finetuning_model:
+            case 'LORA':
+                model = create_lora_model(BASE_MODEL)
+            case 'ADALORA':
+                total_steps = math.ceil(
+                    len(train_dataset) / (BATCH_SIZE * GRAD_ACCUM)
+                ) * EPOCHS
+                model = create_adalora_model(total_steps, BASE_MODEL)
+            case 'PREFIX':
+                model = create_prefix_model(BASE_MODEL)
+            case 'PROMPT':
+                model = create_prompt_model(BASE_MODEL)
+            case 'IA3':
+                model = create_ia3_model(BASE_MODEL)
+            case 'FULL':
+                model = create_full_model(BASE_MODEL)
 
-    # =======================
-    # EXPERIMENT 4: Adapter
-    # =======================
-    model_adapter = AutoModelForSeq2SeqLM.from_pretrained(BASE_MODEL)
-    model_adapter = add_adapters_to_model(model_adapter)
-    train_model(model_adapter, train_dataset, val_dataset, tokenizer, "./models/adapter", EPOCHS)
+        load_best_model_at_end = False
+        if finetuning_model in ['LORA', 'ADALORA', 'FULL']:
+            load_best_model_at_end = True
 
-    # =======================
-    # EXPERIMENT 5: Full Fine-tuning
-    # =======================
-    model_full = create_full_finetuning_model(BASE_MODEL)
-    train_model(model_full, train_dataset, val_dataset, tokenizer, "./models/full_finetuning", EPOCHS)
+        logger.section("Training")
+        trainer = train_model(
+            model,
+            train_dataset,
+            val_dataset,
+            tokenizer,
+            f"{MODELS_PATH}/{finetuning_model.lower()}",
+            load_best_model_at_end
+        )
+        logger.info("Saving")
+        save_training_artifacts(
+            trainer=trainer,
+            tokenizer=tokenizer,
+            output_dir=f"{MODELS_PATH}/{finetuning_model.lower()}/final",
+            metadata={
+                "finetuning_type": finetuning_model.lower(),
+                "base_model": BASE_MODEL,
+                "epochs": EPOCHS
+            }
+        )
+        del model, trainer
 
     # =======================
     # EXPERIMENT 6: Model from Scratch
     # =======================
-    model_scratch = train_from_scratch(train_dataset, val_dataset, tokenizer, EPOCHS)
-    torch.save(model_scratch.state_dict(), "./models/from_scratch/model.pt")
+    # model_scratch = train_from_scratch(train_dataset, val_dataset, tokenizer, EPOCHS)
+    # torch.save(model_scratch.state_dict(), "./models/from_scratch/model.pt")
+    # del model_scratch
+    # clear_memory()
 
     print("\n=== Treinamento completo! ===")
-    print("Modelos salvos em:")
-    print("  - ./models/lora")
-    print("  - ./models/prefix")
-    print("  - ./models/prompt")
-    print("  - ./models/adapter")
-    print("  - ./models/full_finetuning")
-    print("  - ./models/from_scratch")
 
 if __name__ == "__main__":
     app.run(main)

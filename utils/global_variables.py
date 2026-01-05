@@ -37,3 +37,6 @@ TGT_LANG = config['data_aug_params']['tgt_lang']
 
 BASE_MODEL = config['finetuning_params']['base_model']
 EPOCHS = config['finetuning_params']['epochs']
+BATCH_SIZE = config['finetuning_params']['batch_size']
+GRAD_ACCUM = config['finetuning_params']['grad_accum']
+MODELS_PATH = f"{PROJECT_ROOT}/models"

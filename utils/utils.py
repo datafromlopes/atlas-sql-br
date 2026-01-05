@@ -80,7 +80,7 @@ class TfIdfVectorizer:
         save_npz(TF_IDF_MATRIX_NAME, sparse_matrix)
         features.write_parquet(TF_IDF_FEATURES_NAME)
 
-class Logger:
+class Logger(logging.Logger):
     """
     A wrapper class to configure and manage application logging.
 
@@ -93,10 +93,10 @@ class Logger:
         pid_name (str): The process identifier name used in log formatting.
     """
     def __init__(self, pid_name: str = "augmentation"):
+        super().__init__(name=f"app.{pid_name}")
         self.__pid_name = pid_name
-        self.__logger = logging.getLogger(f"app.{pid_name}")
 
-    def setup_logging(self) -> logging.Logger:
+    def setup_logging(self):
         """
         Configures and retrieves the logger instance.
 
@@ -112,21 +112,30 @@ class Logger:
             Exception: If an error occurs during the configuration of handlers
                 or formatters.
         """
-        try:
-            if not self.__logger.handlers:
-                logging.getLogger().handlers.clear()
-                self.__logger.setLevel(logging.INFO)
+        if not self.handlers:
+            logging.getLogger().handlers.clear()
+            self.setLevel(logging.INFO)
 
-                handler = logging.StreamHandler(sys.stdout)
-                formatter = logging.Formatter(
-                    f'%(asctime)s - %(levelname)s - {self.__pid_name} - %(message)s'
-                )
-                handler.setFormatter(formatter)
-                self.__logger.handlers.clear()
-                self.__logger.addHandler(handler)
+            handler = logging.StreamHandler(sys.stdout)
+            formatter = logging.Formatter(
+                f'%(asctime)s - %(levelname)s - {self.__pid_name} - %(message)s'
+            )
+            handler.setFormatter(formatter)
 
-            self.__logger.propagate = False
+            self.handlers.clear()
+            self.addHandler(handler)
 
-            return self.__logger
-        except Exception as e:
-            raise Exception(f"Error configuring the logger: {e}")
+        self.propagate = False
+        return self
+
+    def banner(self, title: str, width: int = 60):
+        line = "=" * width
+        self.info("")
+        self.info(line)
+        self.info(title.center(width))
+        self.info(line)
+        self.info("")
+
+    def section(self, title: str):
+        self.info("")
+        self.info(f"[ {title.upper()} ]")
