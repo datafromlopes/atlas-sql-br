@@ -53,11 +53,16 @@ from utils import Logger
 
 _device = None
 
-if torch.backends.mps.is_available():
+if torch.cuda.is_available():
+    _device = torch.device("cuda")
+    print(f"Usando dispositivo: CUDA ({torch.cuda.get_device_name(0)})")
+elif torch.backends.mps.is_available():
     os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
     _device = torch.device("mps")
+    print("Usando dispositivo: MPS (Apple Silicon)")
 else:
     _device = torch.device("cpu")
+    print("Usando dispositivo: CPU")
 
 def clear_memory():
     gc.collect()
@@ -83,7 +88,7 @@ class Text2SQLDataset(Dataset):
         row = self.data.row(idx, named=True)
 
         # Input: question + context
-        input_text = f"Traduza para SQL: {row['question']}"
+        input_text = row['question']
         if row['territorial_division']:
             input_text += f" [Divisão: {row['territorial_division']}]"
         if row['geospatial_functions']:
@@ -156,7 +161,7 @@ def prepare_data(df: pl.DataFrame, tokenizer, train_split=0.8):
 # =======================
 # 1. LORA MODEL
 # =======================
-def create_lora_model(base_model_name="t5-small"):
+def create_lora_model(base_model_name):
     model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
 
     lora_config = LoraConfig(
@@ -171,15 +176,15 @@ def create_lora_model(base_model_name="t5-small"):
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
-    return model
+    return model, lora_config.to_dict()
 
 # =======================
 # 2. ADALORA MODEL
 # =======================
-def create_adalora_model(total_steps, base_model_name="t5-small"):
+def create_adalora_model(total_steps, base_model_name):
     model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
 
-    config = AdaLoraConfig(
+    adalora_config = AdaLoraConfig(
         task_type=TaskType.SEQ_2_SEQ_LM,
         r=8,
         lora_alpha=16,
@@ -188,15 +193,15 @@ def create_adalora_model(total_steps, base_model_name="t5-small"):
         inference_mode=False
     )
 
-    model = get_peft_model(model, config)
+    model = get_peft_model(model, adalora_config)
     model.print_trainable_parameters()
 
-    return model
+    return model, adalora_config.to_dict()
 
 # =======================
 # 3. PREFIX-TUNING MODEL
 # =======================
-def create_prefix_model(base_model_name="t5-small"):
+def create_prefix_model(base_model_name):
     model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
 
     prefix_config = PrefixTuningConfig(
@@ -209,12 +214,12 @@ def create_prefix_model(base_model_name="t5-small"):
     model = get_peft_model(model, prefix_config)
     model.print_trainable_parameters()
 
-    return model
+    return model, prefix_config.to_dict()
 
 # =======================
 # 4. PROMPT TUNING MODEL
 # =======================
-def create_prompt_model(base_model_name="t5-small"):
+def create_prompt_model(base_model_name):
     model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
 
     prompt_config = PromptTuningConfig(
@@ -229,30 +234,12 @@ def create_prompt_model(base_model_name="t5-small"):
     model = get_peft_model(model, prompt_config)
     model.print_trainable_parameters()
 
-    return model
+    return model, prompt_config.to_dict()
 
 # =======================
-# 5. PROMPT TUNING V2 MODEL
+# 5. IA3 TUNING MODEL
 # =======================
-def create_ptuning_v2_model(base_model_name="t5-small", num_virtual_tokens=20):
-    model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
-
-    prompt_config = PromptTuningConfig(
-        task_type=TaskType.SEQ_2_SEQ_LM,
-        num_virtual_tokens=num_virtual_tokens,
-        prompt_tuning_init="RANDOM",
-        inference_mode=False
-    )
-
-    model = get_peft_model(model, prompt_config)
-    model.print_trainable_parameters()
-
-    return model
-
-# =======================
-# 6. IA3 TUNING MODEL
-# =======================
-def create_ia3_model(base_model_name="t5-small"):
+def create_ia3_model(base_model_name):
     model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
 
     ia3_config = IA3Config(
@@ -264,18 +251,18 @@ def create_ia3_model(base_model_name="t5-small"):
     model = get_peft_model(model, ia3_config)
     model.print_trainable_parameters()
 
-    return model
+    return model, ia3_config.to_dict()
 
 # =======================
-# 7. FULL FINE-TUNING MODEL
+# 6. FULL FINE-TUNING MODEL
 # =======================
-def create_full_model(base_model_name="t5-small"):
+def create_full_model(base_model_name):
     model = AutoModelForSeq2SeqLM.from_pretrained(base_model_name)
 
-    return model
+    return model, {}
 
 # =======================
-# 8. PYTORCH MODEL - FROM SCRATCH
+# 7. PYTORCH MODEL - FROM SCRATCH
 # =======================
 class SimpleSeq2SeqModel(nn.Module):
     def __init__(self, vocab_size, embed_dim=256, hidden_dim=512, num_layers=2):
@@ -403,16 +390,17 @@ def train_model(
     )
     trainer.train()
 
-    return trainer
+    return trainer, training_args
 
 def save_training_artifacts(
-        trainer: Trainer,
+        trainer,
         tokenizer,
         output_dir: str,
         save_best: bool = False,
         metadata: dict | None = None
 ):
-    model_to_save = (trainer.model if not save_best else trainer.model)
+    
+    model_to_save = trainer.model
     model_to_save.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
 
@@ -425,6 +413,30 @@ def save_training_artifacts(
             json.dump(metadata, f, indent=2)
 
     trainer.state.save_to_json(os.path.join(output_dir, "trainer_state.json"))
+    
+    print(f"Artefatos salvos localmente em: {output_dir}")
+
+    if wandb.run is not None:
+        print("⏳ Iniciando upload para o WandB...")
+        
+        artifact_name = f"model-{metadata.get('finetuning_type', 'run')}" if metadata else "model-artifact"
+        
+        # Cria o objeto Artefato
+        artifact = wandb.Artifact(
+            name=artifact_name, 
+            type="model",
+            metadata=metadata # Anexa os metadados diretamente ao card do modelo no WandB
+        )
+        
+        # Adiciona todo o diretório que acabamos de salvar localmente
+        artifact.add_dir(output_dir)
+        
+        # Faz o log (upload) do artefato
+        wandb.log_artifact(artifact)
+        
+        print(f"Modelo salvo no WandB como artefato: {artifact_name}")
+    else:
+        print("WandB não está ativo. O modelo foi salvo apenas localmente.")
 
 # =============================================================================================
 # MAIN PIPELINE
@@ -432,13 +444,10 @@ def save_training_artifacts(
 def main(argv):
     del argv
     df = GeoDataset.get_dataset().collect()
+    df_shuffled = df.sample(fraction=1.0, shuffle=True, seed=42)
 
-    print(f"Dataset: {df.shape}")
-
-    # Tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
-    train_dataset, val_dataset = prepare_data(df, tokenizer)
-
+    print(f"Dataset: {df_shuffled.shape}")
+    
     finetuning_models = [
         'LORA',
         'ADALORA',
@@ -448,35 +457,47 @@ def main(argv):
         'FULL'
     ]
 
+    key = os.getenv("WANDB_API_KEY")
+    wandb.login(key=key)
+
     for finetuning_model in finetuning_models:
         clear_memory()
         logger.banner(f"STARTING {finetuning_model} TRAINING")
         logger.info("Loading model")
 
+        tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
+        train_dataset, val_dataset = prepare_data(df_shuffled, tokenizer)
+
+        wandb.init(
+            project="geo-nlq-to-sql", 
+            name=f"train-{finetuning_model.lower()}",
+            reinit=True
+        )
+
         model = None
         match finetuning_model:
             case 'LORA':
-                model = create_lora_model(BASE_MODEL)
+                model, model_config = create_lora_model(BASE_MODEL)
             case 'ADALORA':
                 total_steps = math.ceil(
                     len(train_dataset) / (BATCH_SIZE * GRAD_ACCUM)
                 ) * EPOCHS
-                model = create_adalora_model(total_steps, BASE_MODEL)
+                model, model_config = create_adalora_model(total_steps, BASE_MODEL)
             case 'PREFIX':
-                model = create_prefix_model(BASE_MODEL)
+                model, model_config = create_prefix_model(BASE_MODEL)
             case 'PROMPT':
-                model = create_prompt_model(BASE_MODEL)
+                model, model_config = create_prompt_model(BASE_MODEL)
             case 'IA3':
-                model = create_ia3_model(BASE_MODEL)
+                model, model_config = create_ia3_model(BASE_MODEL)
             case 'FULL':
-                model = create_full_model(BASE_MODEL)
+                model, model_config = create_full_model(BASE_MODEL)
 
         load_best_model_at_end = False
         if finetuning_model in ['LORA', 'ADALORA', 'FULL']:
             load_best_model_at_end = True
 
         logger.section("Training")
-        trainer = train_model(
+        trainer, training_args = train_model(
             model,
             train_dataset,
             val_dataset,
@@ -484,26 +505,26 @@ def main(argv):
             f"{MODELS_PATH}/{finetuning_model.lower()}",
             load_best_model_at_end
         )
+
+        metadata = {
+            "project_name": "geo-nlq-to-sql",
+            "finetuning_type": finetuning_model.lower(),
+            "base_model": BASE_MODEL,
+            "epochs": EPOCHS,
+            **model_config,
+            **training_args.to_dict(),
+            "transformers_version": transformers.__version__
+        }
+
         logger.info("Saving")
         save_training_artifacts(
             trainer=trainer,
             tokenizer=tokenizer,
             output_dir=f"{MODELS_PATH}/{finetuning_model.lower()}/final",
-            metadata={
-                "finetuning_type": finetuning_model.lower(),
-                "base_model": BASE_MODEL,
-                "epochs": EPOCHS
-            }
+            metadata=metadata
         )
         del model, trainer
-
-    # =======================
-    # EXPERIMENT 6: Model from Scratch
-    # =======================
-    # model_scratch = train_from_scratch(train_dataset, val_dataset, tokenizer, EPOCHS)
-    # torch.save(model_scratch.state_dict(), "./models/from_scratch/model.pt")
-    # del model_scratch
-    # clear_memory()
+        wandb.finish()
 
     print("\n=== Treinamento completo! ===")
 

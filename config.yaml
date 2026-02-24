@@ -16,7 +16,7 @@ data_aug_params:
   src_lang: por_Latn
   tgt_lang: deu_Latn
 finetuning_params:
-  base_model: t5-small
+  base_model: google/flan-t5-base
   epochs: 3
   batch_size: 2
   grad_accum: 4
