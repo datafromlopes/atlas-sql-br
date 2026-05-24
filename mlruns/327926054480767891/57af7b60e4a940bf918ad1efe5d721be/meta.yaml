@@ -1,0 +1,14 @@
+artifact_uri: file:///Users/diegolopes/repositories/atlas-sql-br/mlruns/327926054480767891/57af7b60e4a940bf918ad1efe5d721be/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '327926054480767891'
+lifecycle_stage: active
+run_id: 57af7b60e4a940bf918ad1efe5d721be
+run_name: flan-t5-large_scratch_v0
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1779585606302
+status: 1
+tags: []
+user_id: diegolopes

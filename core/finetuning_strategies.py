@@ -435,30 +435,31 @@ def get_ia3_config() -> IA3Config:
         inference_mode      = False,
     )
 
-def get_base_config(model_architecture: str):
+def get_base_config(model_architecture):
     config = None
     match model_architecture.upper():
         case "T5":
             config = T5Config(
-                vocab_size=32128,          # Tamanho do vocabulário padrão do T5
-                d_model=256,               # Dimensão dos vetores de cada palavra
-                d_kv=64,                   # Dimensão das matrizes de Atenção (Key/Value)
-                d_ff=1024,                 # Tamanho da rede Feed-Forward (memória interna)
-                num_layers=4,              # Quantidade de blocos no Encoder e no Decoder
-                num_heads=4,               # Número de cabeças de atenção
-                pad_token_id=0,            # ID usado para preencher espaços vazios
-                eos_token_id=1,            # ID que avisa o fim da frase
-                decoder_start_token_id=0,  # ID que avisa o Decoder para começar a gerar o SQL
+                vocab_size=32128,              # Standard T5 vocabulary size
+                d_model=512,                   # Equivalent to hidden_size
+                d_kv=64,                       # Attention per head (d_model / num_heads -> 512 / 8 = 64)
+                d_ff=1024,                     # Equivalent to intermediate_size
+                num_layers=6,                  # Number of Transformer blocks
+                num_heads=8,                   # Number of attention heads
+                pad_token_id=0,                # ID used for padding
+                eos_token_id=1,                # ID indicating the end of the sequence
+                decoder_start_token_id=0,      # ID that tells the Decoder to start generating
             )
         case "LLAMA":
             config = LlamaConfig(
-                vocab_size=32000,              # Tamanho do dicionário de palavras
-                hidden_size=512,               # d_model (Tamanho do vetor de cada token)
-                intermediate_size=1024,        # Tamanho da camada Feed-Forward
-                num_hidden_layers=6,           # Quantidade de blocos Transformer
-                num_attention_heads=8,         # Número de cabeças de atenção
-                max_position_embeddings=1024,  # Contexto máximo (quantidade de tokens)
+                vocab_size=32128,              # Matched with T5
+                hidden_size=512,               # Equivalent to d_model
+                intermediate_size=1024,        # Equivalent to d_ff
+                num_hidden_layers=6,           # Equivalent to num_layers
+                num_attention_heads=8,         # Number of attention heads (matched)
+                max_position_embeddings=1024,  # Max context length (T5 uses relative embeddings, Llama needs this fixed)
             )
+            
     return config
 
 # =============================================================================================
@@ -472,12 +473,10 @@ def _load_tokenizer(base_model_name: str):
     tokenizer.padding_side = "right"
     return tokenizer
 
-def _build_model(config_type, model_architecture, base_model_name: str, config):
+def _build_model(config_type: str, model_architecture: str, base_model_name: str, config):
     model = None
     
     if config_type.upper() == "BASE":
-        config = get_base_config(model_architecture=model_architecture)
-
         match model_architecture.upper():
             case "T5":
                 model = T5ForConditionalGeneration(config)
@@ -505,7 +504,7 @@ def create_ia3_model(model_architecture, base_model_name: str, **kwargs):
 
 def create_from_scratch(model_architecture, base_model_name: str, **kwargs):
     config_type="BASE"
-    return _build_model(config_type, model_architecture, base_model_name, get_base_config())
+    return _build_model(config_type, model_architecture, base_model_name, get_base_config(model_architecture))
 
 def save_merged_standalone(
     base_model_name: str,
@@ -618,7 +617,8 @@ parser = argparse.ArgumentParser(description="Training Script")
 parser.add_argument("--experiment_version", type=int, default=0, help="The experiment version")
 args = parser.parse_args()
 
-experiment_version = args.experiment_version
+# experiment_version = args.experiment_version
+experiment_version=0
 CONFIG_PATH = PROJECT_PATH / "experiments" / f"exp-v{experiment_version}.yaml"
 
 with open(CONFIG_PATH, 'r') as f:
