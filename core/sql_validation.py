@@ -34,6 +34,7 @@ Parser covers:
   • GROUP BY / ORDER BY (ASC/DESC) / LIMIT / OFFSET
   • Set operators: UNION / INTERSECT / EXCEPT  (ALL)
   • CASE WHEN … THEN … ELSE … END expressions
+  • PostgreSQL :: cast operator (e.g. geom::geography)
 """
 from __future__ import annotations
 
@@ -103,6 +104,14 @@ def lex(sql: str) -> list[Token]:
             j=i
             while j<n and (sql[j].isdigit() or sql[j] in '.eE'): j+=1
             toks.append(Token(TT.NUM, sql[i:j], i)); i=j; continue
+        # PostgreSQL cast operator :: — must be checked BEFORE single-char ':'
+        if sql[i:i+2]=="::":
+            # consume the operator and the following type name, emit as a no-op OP
+            i += 2
+            # skip the type identifier (e.g. "geography", "text", "integer")
+            while i < n and (sql[i].isalnum() or sql[i] == '_'): i += 1
+            # emit a sentinel so the parser can silently ignore it
+            toks.append(Token(TT.OP, "::", i)); continue
         # two-character operators
         if sql[i:i+2] in ("<>","!=",">=","<=","||"):
             toks.append(Token(TT.OP, sql[i:i+2], i)); i+=2; continue
@@ -356,6 +365,11 @@ class Parser:
     def cur_type(self, *types) -> bool:
         return self.cur().type in types
 
+    def skip_pg_cast(self) -> None:
+        """Consume a PostgreSQL :: cast token (already consumed the type name in lex)."""
+        while self.cur().type == TT.OP and self.cur().value == "::":
+            self.advance()
+
     # ── entry point ─────────────────────────────────────────────────────────
 
     def parse(self) -> SelectStmt:
@@ -572,7 +586,7 @@ class Parser:
             pattern = self.parse_expr()
             return BinOp("not_like" if neg else "like", left, pattern)
         # binary comparison operators (=, <>, !=, <, >, <=, >=)
-        if self.cur().type == TT.OP:
+        if self.cur().type == TT.OP and self.cur().value not in ("::","||"):
             op = self.advance().value
             right = self.parse_expr()
             return BinOp(op, left, right)
@@ -608,9 +622,12 @@ class Parser:
             self.advance()
             if self.cur_is("select"):
                 sub = self.parse_query(); self.expect(")")
-                return SubqueryExpr(sub)
-            expr = self.parse_condition(); self.expect(")")
-            return expr
+                node = SubqueryExpr(sub)
+            else:
+                node = self.parse_condition(); self.expect(")")
+            # consume any trailing :: cast token
+            self.skip_pg_cast()
+            return node
 
         # EXISTS subquery
         if t.value == "exists":
@@ -650,7 +667,9 @@ class Parser:
                 if self.cur().type == TT.STAR:
                     self.advance(); return StarExpr(name)
                 col = self.advance().value
-                return Identifier([name, col])
+                node = Identifier([name, col])
+                self.skip_pg_cast()
+                return node
             # parenthesised argument list → function call
             if self.cur().type == TT.LP:
                 self.advance()
@@ -661,6 +680,8 @@ class Parser:
                 elif not self.cur_is(")"):
                     args = self.parse_expr_list()
                 self.expect(")")
+                # consume any trailing :: cast token after function call
+                self.skip_pg_cast()
                 # OVER (window function) — skip window body, keep sentinel
                 if self.cur_is("over"):
                     self.advance(); self.expect("(")
@@ -671,7 +692,9 @@ class Parser:
                         if depth: self.advance()
                     self.advance()
                 return FuncCall(name, args, distinct)
-            return Identifier([name])
+            node = Identifier([name])
+            self.skip_pg_cast()
+            return node
 
         raise ParseError(f"Unexpected token: {t!r}")
 
@@ -976,16 +999,16 @@ def string_matching(predicted: str, gold: str) -> dict[str, Any]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 9 — FAILURE TAXONOMY  (classificação automática de erros)
+# 9 — FAILURE TAXONOMY
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class FailureType(Enum):
     CORRECT                 = "correct"
-    WRONG_AGGREGATION       = "wrong_aggregation"        # e.g. COUNT vs SUM
-    WRONG_CONDITION_VALUE   = "wrong_condition_value"    # e.g. salary > 5000 vs 3000
-    WRONG_CONDITION_OP      = "wrong_condition_op"       # e.g. AND vs OR
+    WRONG_AGGREGATION       = "wrong_aggregation"
+    WRONG_CONDITION_VALUE   = "wrong_condition_value"
+    WRONG_CONDITION_OP      = "wrong_condition_op"
     MISSING_JOIN            = "missing_join"
-    WRONG_JOIN_TYPE         = "wrong_join_type"          # e.g. LEFT vs INNER
+    WRONG_JOIN_TYPE         = "wrong_join_type"
     WRONG_JOIN_CONDITION    = "wrong_join_condition"
     MISSING_GROUPBY         = "missing_group_by"
     MISSING_HAVING          = "missing_having"
@@ -1023,7 +1046,7 @@ def classify_failure(predicted: str, gold: str,
 
     cm = component_matching(predicted, gold)
 
-    def clause_differs(name: str) -> bool:  # helper: True when predicted != gold for clause
+    def clause_differs(name: str) -> bool:
         r = cm.get(name)
         return r is not None and not r.match
 
@@ -1033,7 +1056,6 @@ def classify_failure(predicted: str, gold: str,
 
     # SELECT columns
     if clause_differs("select"):
-        # check whether aggregate functions differ
         p_funcs = {n.name for n in pa.columns if isinstance(n, FuncCall)}
         g_funcs = {n.name for n in ga.columns if isinstance(n, FuncCall)}
         if p_funcs != g_funcs and (p_funcs | g_funcs):
@@ -1060,7 +1082,6 @@ def classify_failure(predicted: str, gold: str,
     if clause_differs("where"):
         pw_str = str(pa.where.canonical()) if pa.where else ""
         gw_str = str(ga.where.canonical()) if ga.where else ""
-        # detect whether logical operator changed or only operand values changed
         p_ops = set(re.findall(r"'bool', '(\w+)'", pw_str))
         g_ops = set(re.findall(r"'bool', '(\w+)'", gw_str))
         if p_ops != g_ops:
@@ -1101,30 +1122,24 @@ def classify_failure(predicted: str, gold: str,
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 10 — RELATÓRIO CONSOLIDADO
+# 10 — CONSOLIDATED REPORT
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
 class SQLValidationReport:
     predicted: str
     gold: str
-    # AST canonical equivalence
     ast_equivalent: bool = False
     ast_parse_error: Optional[str] = None
-    # Structural F1 over AST nodes
     structural_f1: dict = field(default_factory=dict)
-    # Execution Accuracy (PostgreSQL)
     ex_match: Optional[bool] = None
     ex_compare_mode: str = "multiset"
     ex_predicted_rows: Optional[list] = None
     ex_gold_rows: Optional[list] = None
     ex_error: Optional[str] = None
-    # Component Matching per clause
     component_results: dict = field(default_factory=dict)
     component_avg_jaccard: float = 0.0
-    # String Matching metrics
     string: dict = field(default_factory=dict)
-    # Failure Taxonomy labels
     failures: list = field(default_factory=list)
 
 
@@ -1134,7 +1149,18 @@ def validate_sql(
     dsn: Optional[PgDSN] = None,
     conn: Optional[PgConnection] = None,
     compare_mode: CompareMode = "multiset",
-) -> SQLValidationReport:
+) -> str:
+    """
+    Run all validation metrics and return a normalized JSON string.
+
+    Parameters
+    ----------
+    predicted    : SQL query generated by the model
+    gold         : reference SQL query
+    dsn          : optional PostgreSQL DSN for execution accuracy
+    conn         : optional already-open psycopg2 connection
+    compare_mode : 'set' | 'multiset' | 'list'  (used only with dsn/conn)
+    """
     r = SQLValidationReport(predicted=predicted, gold=gold)
 
     # AST canonical equivalence
@@ -1150,11 +1176,11 @@ def validate_sql(
     if dsn or conn:
         ex_result = execution_accuracy(predicted, gold, dsn=dsn,
                                        conn=conn, compare_mode=compare_mode)
-        r.ex_match           = ex_result["match"]
-        r.ex_compare_mode    = ex_result["compare_mode"]
-        r.ex_predicted_rows  = ex_result["predicted_rows"]
-        r.ex_gold_rows       = ex_result["gold_rows"]
-        r.ex_error           = ex_result.get("predicted_error") or ex_result.get("gold_error")
+        r.ex_match          = ex_result["match"]
+        r.ex_compare_mode   = ex_result["compare_mode"]
+        r.ex_predicted_rows = ex_result["predicted_rows"]
+        r.ex_gold_rows      = ex_result["gold_rows"]
+        r.ex_error          = ex_result.get("predicted_error") or ex_result.get("gold_error")
 
     # Component Matching per clause
     cm = component_matching(predicted, gold)
@@ -1164,9 +1190,34 @@ def validate_sql(
     r.component_avg_jaccard = component_matching_score(predicted, gold)
 
     # String Matching metrics
-    r.string = string_matching(predicted, gold)
+    r.string   = string_matching(predicted, gold)
 
     # Failure Taxonomy
     r.failures = [f.value for f in classify_failure(predicted, gold, ex_result)]
 
-    return r
+    payload = {
+        "summary": {
+            "ast_equivalent":        r.ast_equivalent,
+            "execution_match":       r.ex_match,
+            "component_avg_jaccard": round(r.component_avg_jaccard, 4),
+            "string_exact":          r.string.get("exact"),
+            "string_similarity":     r.string.get("similarity"),
+            "failures":              r.failures,
+        },
+        "ast": {
+            "equivalent":  r.ast_equivalent,
+            "parse_error": r.ast_parse_error,
+        },
+        "structural_f1": r.structural_f1,
+        "execution": {
+            "match":          r.ex_match,
+            "compare_mode":   r.ex_compare_mode,
+            "predicted_rows": r.ex_predicted_rows,
+            "gold_rows":      r.ex_gold_rows,
+            "error":          r.ex_error,
+        } if r.ex_match is not None else None,
+        "components": r.component_results,
+        "string":     r.string,
+    }
+
+    return json.dumps(payload, ensure_ascii=False, indent=2, default=str)

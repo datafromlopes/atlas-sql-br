@@ -15,40 +15,38 @@
 from .utils import GeoDataset, TfIdfVectorizer, Logger
 
 from .global_variables import (
-    PROJECT_ROOT,
-    CONFIG_PATH,
-    DATASET_FULL_NAME,
+    PROJECT_NAME,
+    PROJECT_PATH,
     DATASET_TYPE,
+    DATASET_FULL_NAME,
+    TF_IDF_MATRIX_NAME,
+    TF_IDF_FEATURES_NAME,
     TRANSLATOR_MODEL,
     UNMASKER_MODEL,
     NLP_VOCAB,
     NLP_LANGUAGE,
     SRC_LANG,
     TGT_LANG,
-    BASE_MODEL,
-    EPOCHS,
-    BATCH_SIZE,
-    GRAD_ACCUM,
-    MODELS_PATH
+    INPUT_FILE,
+    OUTPUT_FILE
 )
 
 __all__ = [
     'GeoDataset',
     'TfIdfVectorizer',
     'Logger',
-    'PROJECT_ROOT',
-    'CONFIG_PATH',
-    'DATASET_FULL_NAME',
+    'PROJECT_NAME',
+    'PROJECT_PATH',
     'DATASET_TYPE',
+    'DATASET_FULL_NAME',
+    'TF_IDF_MATRIX_NAME',
+    'TF_IDF_FEATURES_NAME',
     'TRANSLATOR_MODEL',
     'UNMASKER_MODEL',
     'NLP_VOCAB',
     'NLP_LANGUAGE',
     'SRC_LANG',
     'TGT_LANG',
-    'BASE_MODEL',
-    'EPOCHS',
-    'BATCH_SIZE',
-    'GRAD_ACCUM',
-    'MODELS_PATH'
+    'INPUT_FILE',
+    'OUTPUT_FILE'
 ]

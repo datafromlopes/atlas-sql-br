@@ -512,7 +512,7 @@ def main(argv):
     dataset_loader = GeoDataset()
     tfidf_vectorizer = TfIdfVectorizer()
 
-    lf_data = dataset_loader.get_dataset(base_dataset=True)
+    lf_data = dataset_loader.get_dataset(partition='base_dataset')
     tfidf_matrix = tfidf_vectorizer.get_tfidf_matrix()
     lf_features = dataset_loader.get_features()
 

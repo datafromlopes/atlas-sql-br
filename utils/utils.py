@@ -16,7 +16,6 @@ from scipy.sparse import load_npz, csr_matrix, save_npz
 import polars as pl
 from .global_variables import (
     DATASET_FULL_NAME,
-    BASE_DATASET_FULL_NAME,
     TF_IDF_MATRIX_NAME,
     TF_IDF_FEATURES_NAME
 )
@@ -37,7 +36,7 @@ class GeoDataset:
         return pl.scan_parquet(TF_IDF_FEATURES_NAME)
 
     @staticmethod
-    def get_dataset(base_dataset=False, partition=None) -> pl.LazyFrame:
+    def get_dataset(partition=None) -> pl.LazyFrame:
         """Get the dataset.
 
         Arguments:
@@ -47,9 +46,6 @@ class GeoDataset:
         Returns:
            pl.LazyFrame: Polars LazyFrame
         """
-        if base_dataset:
-            return pl.scan_parquet(BASE_DATASET_FULL_NAME)
-
         if partition:
             file = f"{DATASET_FULL_NAME}/source={partition}"
             return pl.scan_parquet(file)

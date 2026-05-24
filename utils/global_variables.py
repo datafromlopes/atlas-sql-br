@@ -21,13 +21,27 @@ CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
+#----------------------------------------------------------------------------------------------------------------
+# GENERAL PARAMETERS
+#----------------------------------------------------------------------------------------------------------------
+PROJECT_NAME = config['general']['project_name']
+PROJECT_PATH = PROJECT_ROOT
+
+#----------------------------------------------------------------------------------------------------------------
+# DATASET PARAMETERS
+#----------------------------------------------------------------------------------------------------------------
 DATASET_TYPE =  config["dataset"]["type"]
 DATASET_FULL_NAME = f"{PROJECT_ROOT}/data/{config['dataset']['full']}"
-BASE_DATASET_FULL_NAME = f"{PROJECT_ROOT}/data/{config['dataset']['base']}.{config['dataset']['type']}"
 
+#----------------------------------------------------------------------------------------------------------------
+# TF-IDF PARAMETERS
+#----------------------------------------------------------------------------------------------------------------
 TF_IDF_MATRIX_NAME = f"{PROJECT_ROOT}/data/{config['tf_idf_matrix']['name']}.{config['tf_idf_matrix']['type']}"
 TF_IDF_FEATURES_NAME = f"{PROJECT_ROOT}/data/{config['tf_idf_features']['name']}.{config['tf_idf_features']['type']}"
 
+#----------------------------------------------------------------------------------------------------------------
+# DATA AUGMENTATION PARAMETERS
+#----------------------------------------------------------------------------------------------------------------
 TRANSLATOR_MODEL = config['data_aug_params']['translator_model']
 UNMASKER_MODEL = config['data_aug_params']['unmasker_model']
 NLP_VOCAB = config['data_aug_params']['nlp_vocab']
@@ -35,8 +49,8 @@ NLP_LANGUAGE = config['data_aug_params']['nlp_language']
 SRC_LANG = config['data_aug_params']['src_lang']
 TGT_LANG = config['data_aug_params']['tgt_lang']
 
-BASE_MODEL = config['finetuning_params']['base_model']
-EPOCHS = config['finetuning_params']['epochs']
-BATCH_SIZE = config['finetuning_params']['batch_size']
-GRAD_ACCUM = config['finetuning_params']['grad_accum']
-MODELS_PATH = f"{PROJECT_ROOT}/models"
+#----------------------------------------------------------------------------------------------------------------
+# SQL VALIDATION PARAMETERS
+#----------------------------------------------------------------------------------------------------------------
+INPUT_FILE  = f"{PROJECT_ROOT}/{config['sql_validation']['input_file']}"
+OUTPUT_FILE = f"{PROJECT_ROOT}/{config['sql_validation']['output_file']}"

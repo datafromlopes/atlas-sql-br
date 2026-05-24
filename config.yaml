@@ -1,5 +1,7 @@
+general:
+  project_name: geo-nlq-to-sql
+  project_path: atlas-sql-br
 dataset:
-  base: base_dataset
   full: geo_dataset
   type: parquet
 tf_idf_matrix:
@@ -15,8 +17,6 @@ data_aug_params:
   unmasker_model: neuralmind/bert-base-portuguese-cased
   src_lang: por_Latn
   tgt_lang: deu_Latn
-finetuning_params:
-  base_model: google/flan-t5-base
-  epochs: 3
-  batch_size: 2
-  grad_accum: 4
+sql_validation:
+  input_file: "data/validation_dataset.json"
+  output_file: "data/predictions.json"
