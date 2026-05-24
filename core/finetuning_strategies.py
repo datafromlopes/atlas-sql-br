@@ -64,20 +64,14 @@ diretorio_raiz  = os.path.abspath(os.path.join(diretorio_atual, ".."))
 if diretorio_raiz not in sys.path:
     sys.path.append(diretorio_raiz)
 
+# =============================================================================================
+# GLOBAL VARIABLES SETUP
+# =============================================================================================
 from utils import (
     PROJECT_NAME,
     PROJECT_PATH,
     DATASET_FULL_NAME
 )
-# =============================================================================================
-# GLOBAL VARIABLES SETUP
-# =============================================================================================
-
-
-
-
-
-
 # =============================================================================================
 # ENVIRONMENT & SECURITY SETUP
 # =============================================================================================
@@ -118,7 +112,6 @@ ICONS = {
     "ERROR":    "✖",
     "CRITICAL": "☠",
 }
-
 
 class ColorFormatter(logging.Formatter):
     def format(self, record):
