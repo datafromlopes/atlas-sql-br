@@ -12,12 +12,9 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-from scipy.sparse import load_npz, csr_matrix, save_npz
 import polars as pl
 from .global_variables import (
-    DATASET_FULL_NAME,
-    TF_IDF_MATRIX_NAME,
-    TF_IDF_FEATURES_NAME
+    DATASET_PATH, DATASET_NAME
 )
 
 # SYSTEM
@@ -32,10 +29,6 @@ class GeoDataset:
     from Parquet files, handling file paths and partition logic abstractly.
     """
     @staticmethod
-    def get_features() -> pl.LazyFrame:
-        return pl.scan_parquet(TF_IDF_FEATURES_NAME)
-
-    @staticmethod
     def get_dataset(partition=None) -> pl.LazyFrame:
         """Get the dataset.
 
@@ -47,34 +40,10 @@ class GeoDataset:
            pl.LazyFrame: Polars LazyFrame
         """
         if partition:
-            file = f"{DATASET_FULL_NAME}/source={partition}"
+            file = f"{DATASET_PATH}/{DATASET_NAME}/source={partition}"
             return pl.scan_parquet(file)
 
-        return pl.scan_parquet(DATASET_FULL_NAME)
-
-
-class TfIdfVectorizer:
-    """
-    A utility class for managing the persistence of TF-IDF matrices and features.
-
-    This class provides static methods to save and load TF-IDF sparse matrices
-    and their corresponding feature dataframes to/from disk using predefined
-    file paths.
-    """
-    @staticmethod
-    def get_tfidf_matrix() -> csr_matrix:
-        """Get the TF-IDF matrix.
-
-        Returns:
-            scipy.csr_matrix: Sparse Matrix
-        """
-        return load_npz(TF_IDF_MATRIX_NAME)
-
-    @staticmethod
-    def save_tfidf_matrix(sparse_matrix: csr_matrix, features: pl.DataFrame) -> None:
-        """Save the TF-IDF matrix and features."""
-        save_npz(TF_IDF_MATRIX_NAME, sparse_matrix)
-        features.write_parquet(TF_IDF_FEATURES_NAME)
+        return pl.scan_parquet(f"{DATASET_PATH}/{DATASET_NAME}")
 
 class Logger(logging.Logger):
     """

@@ -21,36 +21,9 @@ CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
-#----------------------------------------------------------------------------------------------------------------
-# GENERAL PARAMETERS
-#----------------------------------------------------------------------------------------------------------------
-PROJECT_NAME = config['general']['project_name']
 PROJECT_PATH = PROJECT_ROOT
-
-#----------------------------------------------------------------------------------------------------------------
-# DATASET PARAMETERS
-#----------------------------------------------------------------------------------------------------------------
-DATASET_TYPE =  config["dataset"]["type"]
-DATASET_FULL_NAME = f"{PROJECT_ROOT}/data/{config['dataset']['full']}"
-
-#----------------------------------------------------------------------------------------------------------------
-# TF-IDF PARAMETERS
-#----------------------------------------------------------------------------------------------------------------
-TF_IDF_MATRIX_NAME = f"{PROJECT_ROOT}/data/{config['tf_idf_matrix']['name']}.{config['tf_idf_matrix']['type']}"
-TF_IDF_FEATURES_NAME = f"{PROJECT_ROOT}/data/{config['tf_idf_features']['name']}.{config['tf_idf_features']['type']}"
-
-#----------------------------------------------------------------------------------------------------------------
-# DATA AUGMENTATION PARAMETERS
-#----------------------------------------------------------------------------------------------------------------
-TRANSLATOR_MODEL = config['data_aug_params']['translator_model']
-UNMASKER_MODEL = config['data_aug_params']['unmasker_model']
-NLP_VOCAB = config['data_aug_params']['nlp_vocab']
-NLP_LANGUAGE = config['data_aug_params']['nlp_language']
-SRC_LANG = config['data_aug_params']['src_lang']
-TGT_LANG = config['data_aug_params']['tgt_lang']
-
-#----------------------------------------------------------------------------------------------------------------
-# SQL VALIDATION PARAMETERS
-#----------------------------------------------------------------------------------------------------------------
-INPUT_FILE  = f"{PROJECT_ROOT}/{config['sql_validation']['input_file']}"
-OUTPUT_FILE = f"{PROJECT_ROOT}/{config['sql_validation']['output_file']}"
+PROJECT_NAME = config['project_name']
+DATASET_PATH = f"{PROJECT_PATH}/data"
+DATASET_VALIDATION_NAME = config['dataset_validation_name']
+DATASET_NAME = config['dataset_name']
+PREDS_DIR = f"{PROJECT_PATH}/data/predictions"

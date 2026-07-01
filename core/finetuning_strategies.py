@@ -12,888 +12,553 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# =============================================================================================
-# IMPORTS - STANDARD LIBRARY
-# =============================================================================================
+# =============================================================================
+#  Text2SQL fine-tuning pipeline.
+#
+#  Study goal: measure whether the DATASET adds value to the model (whether it
+#  learns), comparing performance BEFORE (baseline, no training) vs AFTER
+#  (trained) on the curated test set `train == 0` (holdout with unseen
+#  entities/columns).
+#
+#  Supports (decoder-only models only — Llama / Qwen):
+#   - architecture: "llama" | "qwen"  (decoder-only / causal LM)
+#   - train_method: "none" (baseline, eval only) | "lora" | "ia3" | "full" | "scratch"
+#
+#  This script ONLY trains: it is driven by eval_loss on an internal validation
+#  split (early stopping + best-checkpoint selection) and saves the best model.
+#  Generation and execution scoring on the holdout (train == 0) are done by the
+#  separate harness: generate_sql_preds.py + score_predictions.py.
+# =============================================================================
 import os
 import gc
 import json
-import logging
 import sys
-from pathlib import Path
+import hashlib
+import subprocess
 import argparse
+from urllib.parse import quote_plus
+
 import yaml
-# =============================================================================================
-# IMPORTS - THIRD PARTY
-# =============================================================================================
 import torch
-from torch.utils.data import Dataset, DataLoader
+import polars as pl
+import psutil
 
 import transformers
-import peft
 from transformers import (
-    AutoModelForCausalLM,
+    AutoConfig,
     AutoTokenizer,
+    AutoModelForCausalLM,
     Trainer,
     TrainingArguments,
     EarlyStoppingCallback,
-    T5Config,
-    T5ForConditionalGeneration,
-    LlamaConfig,
-    LlamaForCausalLM
+    set_seed,
 )
-
-from peft import (
-    get_peft_model,
-    LoraConfig,
-    IA3Config,
-    TaskType,
-    PeftModel,
-)
-
-import polars as pl
+from peft import get_peft_model, LoraConfig, IA3Config, TaskType
 from huggingface_hub import login
 import mlflow
-import mlflow.pytorch
-import numpy as np
-# =============================================================================================
+
+# =============================================================================
 # PATH SETUP
-# =============================================================================================
-diretorio_atual = os.path.dirname(os.path.abspath(__file__))
-diretorio_raiz  = os.path.abspath(os.path.join(diretorio_atual, ".."))
-if diretorio_raiz not in sys.path:
-    sys.path.append(diretorio_raiz)
+# =============================================================================
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, ".."))
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
 
-# =============================================================================================
-# GLOBAL VARIABLES SETUP
-# =============================================================================================
-from utils import (
-    PROJECT_NAME,
-    PROJECT_PATH,
-    DATASET_FULL_NAME
-)
-# =============================================================================================
-# ENVIRONMENT & SECURITY SETUP
-# =============================================================================================
-os.environ["TOKENIZERS_PARALLELISM"]           = "false"
-os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
-os.environ["PYTORCH_ENABLE_MPS_FALLBACK"]      = "1"
+from utils import PROJECT_PATH, PROJECT_NAME, DATASET_PATH, DATASET_NAME  # noqa: E402
+from utils.utils import Logger  # noqa: E402
 
-# Busca o token de forma segura da variável de ambiente do sistema operacional
-HUGGINGFACE_HUB_TOKEN = os.environ.get("HF_TOKEN")
+# Dataset column names.
+Q_COL, SQL_COL, LEVEL_COL, TRAIN_COL = "question", "sql_code", "level", "train"
 
-if not HUGGINGFACE_HUB_TOKEN:
-    raise ValueError(
-        "Token do Hugging Face não encontrado! "
-        "Certifique-se de exportar a variável no seu terminal do Mac antes de rodar o script:\n"
-        "export HF_TOKEN='seu_token_aqui'"
-    )
+# =============================================================================
+# LOGGING
+# =============================================================================
+logger = Logger("finetuning").setup_logging()
 
-os.environ["HUGGINGFACE_HUB_TOKEN"] = HUGGINGFACE_HUB_TOKEN
-login(token=HUGGINGFACE_HUB_TOKEN)
-
-# =============================================================================================
-# LOGGING SETUP
-# =============================================================================================
-RESET  = "\033[0m"
-BOLD   = "\033[1m"
-DIM    = "\033[2m"
-COLORS = {
-    "DEBUG":    "\033[36m",
-    "INFO":     "\033[32m",
-    "WARNING":  "\033[33m",
-    "ERROR":    "\033[31m",
-    "CRITICAL": "\033[41m",
-}
-ICONS = {
-    "DEBUG":    "·",
-    "INFO":     "✔",
-    "WARNING":  "⚠",
-    "ERROR":    "✖",
-    "CRITICAL": "☠",
-}
-
-class ColorFormatter(logging.Formatter):
-    def format(self, record):
-        color = COLORS.get(record.levelname, "")
-        icon  = ICONS.get(record.levelname, "•")
-        ts    = self.formatTime(record, "%Y-%m-%d %H:%M:%S")
-        return (
-            f"{DIM}{ts}{RESET} "
-            f"{color}{BOLD}{icon} [{record.levelname:<8}]{RESET} "
-            f"{DIM}[{record.name}]{RESET} "
-            f"{record.getMessage()}"
-        )
-
-
-logging.basicConfig(
-    level=logging.INFO,
-    force=True,
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("training.log", encoding="utf-8"),
-    ],
-)
-logging.getLogger().handlers[0].setFormatter(ColorFormatter())
-logging.getLogger().handlers[1].setFormatter(
-    logging.Formatter(
-        "%(asctime)s [%(levelname)-8s] [%(name)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-)
-
-logger = logging.getLogger("Fine-Tuning-Pipeline")
-
-# =============================================================================================
-# DEVICE CONFIGURATION
-# =============================================================================================
+# =============================================================================
+# DEVICE  (cheap to compute; no network — fine to run at import time)
+# =============================================================================
 def setup_device() -> torch.device:
     if torch.cuda.is_available():
-        device      = torch.device("cuda")
-        device_name = torch.cuda.get_device_name(0)
-        logger.info(f"Device: CUDA ({device_name})")
-        logger.info(
-            f"  VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB"
-        )
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-        logger.info("Device: MPS (Apple Silicon)")
-        logger.info(
-            "  Unified memory: shared between CPU and GPU — "
-            "avoid pin_memory and multi-worker DataLoader"
-        )
-    else:
-        device = torch.device("cpu")
-        logger.warning("Device: CPU (training will be slow)")
-
-    return device
-
+        logger.info(f"Device: CUDA ({torch.cuda.get_device_name(0)})")
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        logger.info("Device: MPS (Apple Silicon) — unified memory")
+        return torch.device("mps")
+    logger.warning("Device: CPU (training will be slow)")
+    return torch.device("cpu")
 
 DEVICE = setup_device()
-
-IS_MPS  = DEVICE.type == "mps"
+IS_MPS = DEVICE.type == "mps"
 IS_CUDA = DEVICE.type == "cuda"
 
-# =============================================================================================
-# MPS OVERRIDES
-# =============================================================================================
-# if IS_MPS:
-#     FP16 = False
-#     BF16 = False
-#     TF32 = False
-#     DATALOADER_NUM_WORKERS = 0
-#     DATALOADER_PIN_MEMORY  = False
-#     GRADIENT_CHECKPOINTING = False
-#     OPTIM                  = "adamw_torch"
-#     BATCH_SIZE             = 4
-#     GRAD_ACCUM             = 4
 
-#     logger.info(
-#         "MPS overrides applied: fp16/bf16/tf32=False, "
-#         "num_workers=0, pin_memory=False, "
-#         f"batch_size={BATCH_SIZE}, grad_accum={GRAD_ACCUM}"
-#     )
+def resolve_precision(fp16: bool, bf16: bool, tf32: bool):
+    """Align precision flags with the actual device (fixes config inconsistencies)."""
+    if fp16 and bf16:
+        raise ValueError("fp16 and bf16 cannot both be True.")
+    if not IS_CUDA:
+        # tf32 is CUDA-only (Ampere+); fp16/bf16 via Trainer on MPS/CPU is
+        # unstable/ignored — disabling and training in fp32 is the safe choice.
+        if tf32 or fp16 or bf16:
+            logger.warning("Non-CUDA device: forcing fp16/bf16/tf32 = False (fp32).")
+        return False, False, False
+    return fp16, bf16, tf32
 
-# =============================================================================================
-# MLFLOW SETUP
-# =============================================================================================
-MLFLOW_TRACKING_URI = f"file://{PROJECT_PATH}/mlruns"
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-mlflow.set_experiment(PROJECT_NAME)
-logger.info(f"MLflow tracking URI: {MLFLOW_TRACKING_URI}")
+# =============================================================================
+# MLFLOW HELPERS
+# =============================================================================
+def build_mlflow_uri() -> str:
+    """MLflow URI with local fallback and PASSWORD redacted in the log."""
+    pg_user = os.environ.get("PG_USER")
+    pg_pass_raw = os.environ.get("PG_PASS", "")
+    if pg_user and pg_pass_raw:
+        uri = f"postgresql://{pg_user}:{quote_plus(pg_pass_raw)}@localhost:5432/mlflow"
+        redacted = uri.replace(quote_plus(pg_pass_raw), "****")
+    else:
+        uri = f"file://{PROJECT_PATH}/mlruns"
+        redacted = uri
+        logger.warning("PG_USER/PG_PASS not set — using local MLflow at ./mlruns")
+    logger.info(f"MLflow tracking URI: {redacted}")
+    return uri
 
 
-def mlflow_start_run(run_name: str, tags: dict) -> mlflow.ActiveRun:
-    """Start an MLflow run, ending any currently active one first."""
+def get_git_info() -> dict:
+    info = {}
+    for key, cmd in (("git_commit", ["git", "rev-parse", "--short", "HEAD"]),
+                     ("git_branch", ["git", "rev-parse", "--abbrev-ref", "HEAD"])):
+        try:
+            info[key] = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode().strip()
+        except Exception:
+            info[key] = "unavailable"
+    return info
+
+
+def get_dataset_fingerprint(df: pl.DataFrame, n_samples: int = 5) -> dict:
+    md5 = hashlib.md5(df.write_csv().encode()).hexdigest()
+    sample = df.sample(n=min(n_samples, len(df)), seed=42).to_dicts()
+    return {"dataset_md5": md5, "dataset_rows": len(df), "dataset_cols": len(df.columns),
+            "dataset_sample": json.dumps(sample, ensure_ascii=False, default=str)}
+
+
+def get_model_summary(model) -> dict:
+    total = sum(p.numel() for p in model.parameters())
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    return {"params_total": total, "params_trainable": trainable,
+            "params_frozen": total - trainable,
+            "params_trainable_pct": round(100 * trainable / total, 2) if total else 0}
+
+
+def log_system_metrics(step=None):
     try:
-        if mlflow.active_run() is not None:
-            mlflow.end_run()
-    except Exception:
-        pass
-    return mlflow.start_run(run_name=run_name, tags=tags)
+        m = {"system/cpu_percent": psutil.cpu_percent(interval=0.1),
+             "system/ram_used_gb": psutil.virtual_memory().used / 1e9,
+             "system/ram_percent": psutil.virtual_memory().percent}
+        if IS_CUDA:
+            m["system/gpu_allocated_gb"] = torch.cuda.memory_allocated() / 1e9
+        if IS_MPS:
+            m["system/mps_allocated_gb"] = torch.mps.current_allocated_memory() / 1e9
+        mlflow.log_metrics(m, step=step)
+    except Exception as e:
+        logger.warning(f"Failed to log system metrics: {e}")
+
+
+class MLflowRealtimeCallback(transformers.TrainerCallback):
+    """Log training metrics to MLflow. Visual progress is shown by the Trainer's
+    native tqdm bar (kept via disable_tqdm=False)."""
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if not logs:
+            return
+        m = {k: v for k, v in logs.items() if isinstance(v, (int, float))}
+        if m:
+            mlflow.log_metrics(m, step=state.global_step)
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        log_system_metrics(step=state.global_step)
 
 
 def mlflow_log_params(params: dict):
-    """Log a flat dict of params, safely serializing non-primitive values."""
     safe = {}
     for k, v in params.items():
         try:
-            json.dumps(v)
-            safe[k] = v
+            json.dumps(v); safe[k] = v
         except (TypeError, ValueError):
             safe[k] = str(v)
     mlflow.log_params(safe)
 
 
-def mlflow_log_training_history(log_history: list):
-    """Log each entry of trainer.state.log_history as MLflow metrics."""
-    for entry in log_history:
-        step = entry.get("step", 0)
-        metrics = {
-            k: v for k, v in entry.items()
-            if k != "step" and isinstance(v, (int, float))
-        }
-        if metrics:
-            mlflow.log_metrics(metrics, step=step)
-
-
-def mlflow_end_run(status: str = "FINISHED"):
+def mlflow_end_run(status="FINISHED"):
     try:
         if mlflow.active_run() is not None:
             mlflow.end_run(status=status)
     except Exception as e:
         logger.error(f"MLflow end_run error: {e}")
 
-
-# =============================================================================================
-# UTILITY FUNCTIONS
-# =============================================================================================
-def get_versions() -> dict:
-    return {
-        "python":       sys.version.split()[0],
-        "torch":        torch.__version__,
-        "transformers": transformers.__version__,
-        "cuda":         torch.version.cuda if IS_CUDA else None,
-        "mps":          str(IS_MPS),
-    }
+# =============================================================================
+# DATASETS
+# =============================================================================
+def _build_prompt(q: str) -> str:
+    # Single prompt format, identical in training and generation (and it must
+    # match generate_sql_preds.py). Ends with "SQL:" so a decoder-only model
+    # knows the continuation is the query.
+    return f"Pergunta: {q}\nSQL:"
 
 
-def save_training_artifacts(
-    trainer,
-    tokenizer,
-    output_dir: str,
-    metadata: dict | None = None,
-) -> str:
-    os.makedirs(output_dir, exist_ok=True)
-
-    trainer.model.save_pretrained(output_dir)
-    tokenizer.save_pretrained(output_dir)
-
-    if trainer.state.log_history:
-        metrics_path = os.path.join(output_dir, "training_metrics.json")
-        with open(metrics_path, "w") as f:
-            json.dump(trainer.state.log_history, f, indent=2)
-        mlflow.log_artifact(metrics_path)
-
-    trainer.state.save_to_json(os.path.join(output_dir, "trainer_state.json"))
-    mlflow.log_artifact(os.path.join(output_dir, "trainer_state.json"))
-
-    torch.save(trainer.args, os.path.join(output_dir, "training_args.bin"))
-
-    if metadata:
-        meta_path = os.path.join(output_dir, "metadata.json")
-        safe_meta = {}
-        for k, v in metadata.items():
-            try:
-                json.dumps(v)
-                safe_meta[k] = v
-            except (TypeError, ValueError):
-                safe_meta[k] = str(v)
-        with open(meta_path, "w") as f:
-            json.dump(safe_meta, f, indent=2)
-        mlflow.log_artifact(meta_path)
-
-    mlflow.log_artifacts(output_dir, artifact_path="model")
-    logger.info(f"Artifacts logged to MLflow run and saved at: {output_dir}")
-
-    return output_dir
-
-
-def safe_config_to_dict(config) -> dict:
-    try:
-        raw = config.to_dict() if hasattr(config, "to_dict") else vars(config)
-    except Exception:
-        return {}
-
-    result = {}
-    for k, v in raw.items():
-        try:
-            json.dumps(v)
-            result[k] = v
-        except (TypeError, ValueError):
-            result[k] = str(v)
-    return result
-
-
-# =============================================================================================
-# DATASET
-# =============================================================================================
-class Text2SQLDataset(Dataset):
-    def __init__(self, data: pl.DataFrame, tokenizer, max_length: int = 512):
-        self.tokenizer  = tokenizer
-        self.max_length = max_length
-
-        questions = data["question"].to_list()
-        divisions = data["territorial_division"].to_list()
-        sqls      = data["sql_code"].to_list()
-
-        eos   = tokenizer.eos_token
-        texts = [
-            f"Pergunta: {q}" + (f" [Divisão: {d}]" if d else "") + f"\nSQL: {s}{eos}"
-            for q, d, s in zip(questions, divisions, sqls)
-        ]
-
-        encodings = tokenizer(
-            texts,
-            max_length  = max_length,
-            truncation  = True,
-            padding     = False,
-        )
-
-        self.input_ids      = encodings["input_ids"]
-        self.attention_mask = encodings["attention_mask"]
+class CausalDataset(torch.utils.data.Dataset):
+    """Decoder-only (Llama / Qwen): prompt+SQL concatenated; loss ONLY on the SQL span."""
+    def __init__(self, df: pl.DataFrame, tokenizer, max_length: int):
+        self.samples = []
+        eos = tokenizer.eos_token or ""
+        for q, s in zip(df[Q_COL].to_list(), df[SQL_COL].to_list()):
+            prompt = _build_prompt(q)
+            prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
+            full_ids = tokenizer(prompt + " " + s + eos,
+                                 add_special_tokens=False,
+                                 truncation=True, max_length=max_length)["input_ids"]
+            labels = list(full_ids)
+            # FIX (bug #1): mask the prompt so loss is not computed on the question.
+            for i in range(min(len(prompt_ids), len(labels))):
+                labels[i] = -100
+            self.samples.append((full_ids, labels))
 
     def __len__(self):
-        return len(self.input_ids)
+        return len(self.samples)
 
     def __getitem__(self, idx):
-        ids  = torch.tensor(self.input_ids[idx],      dtype=torch.long)
-        mask = torch.tensor(self.attention_mask[idx], dtype=torch.long)
-        return {
-            "input_ids":      ids,
-            "attention_mask": mask,
-            "labels":         ids.clone(),
-        }
+        ids, labels = self.samples[idx]
+        ids = torch.tensor(ids, dtype=torch.long)
+        return {"input_ids": ids,
+                "attention_mask": torch.ones_like(ids),
+                "labels": torch.tensor(labels, dtype=torch.long)}
 
-class OptimizedDataCollator:
-    """Dynamic padding collator — pad_to_multiple_of=8 for Tensor Core alignment."""
 
-    def __init__(self, tokenizer, pad_to_multiple_of: int = 8):
-        self.tokenizer          = tokenizer
-        self.pad_to_multiple_of = pad_to_multiple_of
-
-    def _round_up(self, n: int) -> int:
-        m = self.pad_to_multiple_of
-        return ((n + m - 1) // m) * m
+class CausalCollator:
+    """Dynamic right padding for causal LM; pad_to_multiple_of=8 (Tensor Cores)."""
+    def __init__(self, tokenizer, pad_to_multiple_of=8):
+        self.tok = tokenizer
+        self.mult = pad_to_multiple_of
 
     def __call__(self, features):
-        input_ids      = [f["input_ids"]     for f in features]
-        attention_mask = [f["attention_mask"] for f in features]
-        labels         = [f["labels"]         for f in features]
-
-        max_len = self._round_up(max(len(ids) for ids in input_ids))
-        pad_id  = self.tokenizer.pad_token_id or 0
-
-        padded_ids, padded_mask, padded_labels = [], [], []
-        for ids, mask, lbl in zip(input_ids, attention_mask, labels):
-            pad = max_len - len(ids)
-            padded_ids.append(
-                torch.cat([ids, torch.full((pad,), pad_id, dtype=torch.long)])
-            )
-            padded_mask.append(
-                torch.cat([mask, torch.zeros(pad, dtype=torch.long)])
-            )
-            padded_labels.append(
-                torch.cat([lbl, torch.full((pad,), -100, dtype=torch.long)])
-            )
-
-        return {
-            "input_ids":      torch.stack(padded_ids),
-            "attention_mask": torch.stack(padded_mask),
-            "labels":         torch.stack(padded_labels),
-        }
+        max_len = max(len(f["input_ids"]) for f in features)
+        max_len = ((max_len + self.mult - 1) // self.mult) * self.mult
+        pad_id = self.tok.pad_token_id or 0
+        ids, mask, lbl = [], [], []
+        for f in features:
+            n = max_len - len(f["input_ids"])
+            ids.append(torch.cat([f["input_ids"], torch.full((n,), pad_id, dtype=torch.long)]))
+            mask.append(torch.cat([f["attention_mask"], torch.zeros(n, dtype=torch.long)]))
+            lbl.append(torch.cat([f["labels"], torch.full((n,), -100, dtype=torch.long)]))
+        return {"input_ids": torch.stack(ids),
+                "attention_mask": torch.stack(mask),
+                "labels": torch.stack(lbl)}
 
 
-def prepare_data(
-    df: pl.DataFrame,
-    tokenizer,
-    train_split: float,
-    max_length: int,
-):
-    n_train       = int(len(df) * train_split)
-    train_dataset = Text2SQLDataset(df[:n_train], tokenizer, max_length=max_length)
-    val_dataset   = Text2SQLDataset(df[n_train:], tokenizer, max_length=max_length)
-    return train_dataset, val_dataset
+def stratified_val_split(df: pl.DataFrame, val_fraction: float, seed: int):
+    """Split an internal validation set (early stopping) from training, stratified
+    by level. Does NOT touch the train==0 holdout — that stays untouched for the
+    final test."""
+    train_parts, val_parts = [], []
+    for _, sub in df.partition_by(LEVEL_COL, as_dict=True).items():
+        sub = sub.sample(fraction=1.0, shuffle=True, seed=seed)
+        n_val = max(1, int(len(sub) * val_fraction))
+        val_parts.append(sub[:n_val])
+        train_parts.append(sub[n_val:])
+    return pl.concat(train_parts), pl.concat(val_parts)
 
-
-# =============================================================================================
-# TRAIN CONFIG BUILDERS
-# =============================================================================================
-_ATTENTION_MODULES = ["q_proj", "v_proj"]
-_FFN_MODULES       = ["gate_proj", "up_proj", "down_proj"]
-_ALL_MODULES       = _ATTENTION_MODULES + _FFN_MODULES
-
-def get_lora_config() -> LoraConfig:
-    return LoraConfig(
-        task_type      = TaskType.CAUSAL_LM,
-        target_modules = _ATTENTION_MODULES,
-        inference_mode = False,
-    )
-
-def get_ia3_config() -> IA3Config:
-    return IA3Config(
-        task_type           = TaskType.CAUSAL_LM,
-        target_modules      = _ATTENTION_MODULES + ["down_proj"],
-        feedforward_modules = ["down_proj"],
-        inference_mode      = False,
-    )
-
-def get_base_config(model_architecture):
-    config = None
-    match model_architecture.upper():
-        case "T5":
-            config = T5Config(
-                vocab_size=32128,              # Standard T5 vocabulary size
-                d_model=512,                   # Equivalent to hidden_size
-                d_kv=64,                       # Attention per head (d_model / num_heads -> 512 / 8 = 64)
-                d_ff=1024,                     # Equivalent to intermediate_size
-                num_layers=6,                  # Number of Transformer blocks
-                num_heads=8,                   # Number of attention heads
-                pad_token_id=0,                # ID used for padding
-                eos_token_id=1,                # ID indicating the end of the sequence
-                decoder_start_token_id=0,      # ID that tells the Decoder to start generating
-            )
-        case "LLAMA":
-            config = LlamaConfig(
-                vocab_size=32128,              # Matched with T5
-                hidden_size=512,               # Equivalent to d_model
-                intermediate_size=1024,        # Equivalent to d_ff
-                num_hidden_layers=6,           # Equivalent to num_layers
-                num_attention_heads=8,         # Number of attention heads (matched)
-                max_position_embeddings=1024,  # Max context length (T5 uses relative embeddings, Llama needs this fixed)
-            )
-            
-    return config
-
-# =============================================================================================
+# =============================================================================
 # MODEL FACTORIES
-# =============================================================================================
-def _load_tokenizer(base_model_name: str):
-    tokenizer = AutoTokenizer.from_pretrained(base_model_name)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token    = tokenizer.eos_token
-        tokenizer.pad_token_id = tokenizer.eos_token_id
-    tokenizer.padding_side = "right"
-    return tokenizer
+# =============================================================================
+def load_tokenizer(base_model_name: str):
+    tok = AutoTokenizer.from_pretrained(base_model_name)
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+        tok.pad_token_id = tok.eos_token_id
+    tok.padding_side = "right"  # training; generation switches to 'left' locally
+    return tok
 
-def _build_model(config_type: str, model_architecture: str, base_model_name: str, config):
-    model = None
-    
-    if config_type.upper() == "BASE":
-        match model_architecture.upper():
-            case "T5":
-                model = T5ForConditionalGeneration(config)
-            case "LLAMA":
-                model = LlamaForCausalLM(config)
+
+def _peft_targets():
+    """target_modules for decoder-only (Llama / Qwen)."""
+    return {"lora": ["q_proj", "k_proj", "v_proj", "o_proj"],
+            "ia3": ["k_proj", "v_proj", "down_proj"], "ia3_ff": ["down_proj"]}
+
+
+def build_model(base_model_name: str, train_method: str, cfg: dict, dtype):
+    config = AutoConfig.from_pretrained(base_model_name)
+    if bool(getattr(config, "is_encoder_decoder", False)):
+        raise ValueError(
+            f"{base_model_name} is encoder-decoder; this pipeline supports only "
+            f"decoder-only models (Llama / Qwen).")
+    ModelCls = AutoModelForCausalLM
+    tgt = _peft_targets()
+
+    if train_method == "scratch":
+        # FIX (bug #2/#3): same architecture/vocab as base, random weights.
+        model = ModelCls.from_config(config)
+        logger.info("Model initialized FROM SCRATCH (same architecture as base, random weights).")
     else:
-        model = AutoModelForCausalLM.from_pretrained(
-            base_model_name,
-            torch_dtype = torch.bfloat16
-        )
-        model = model.to(DEVICE)
-        model = get_peft_model(model, config)
+        model = ModelCls.from_pretrained(base_model_name, torch_dtype=dtype)
+        if train_method == "lora":
+            model = get_peft_model(model, LoraConfig(
+                task_type=TaskType.CAUSAL_LM,
+                target_modules=tgt["lora"],
+                r=cfg.get("lora_r", 16),
+                lora_alpha=cfg.get("lora_alpha", 32),
+                lora_dropout=cfg.get("lora_dropout", 0.05),
+                inference_mode=False))
+            model.print_trainable_parameters()
+        elif train_method == "ia3":
+            model = get_peft_model(model, IA3Config(
+                task_type=TaskType.CAUSAL_LM,
+                target_modules=tgt["ia3"], feedforward_modules=tgt["ia3_ff"],
+                inference_mode=False))
+            model.print_trainable_parameters()
+        # "full" and "none": model as-is (full trains everything; none does not train).
 
-    model.print_trainable_parameters()
-    return model, safe_config_to_dict(config)
+    # FIX (bug #6): gradient checkpointing + PEFT needs this so grads can flow.
+    if cfg.get("gradient_checkpoints") and train_method != "none":
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+        if hasattr(model, "config"):
+            model.config.use_cache = False
 
+    return model.to(DEVICE), config
 
-def create_lora_model(model_architecture, base_model_name: str, **kwargs):
-    config_type="LORA"
-    return _build_model(config_type, model_architecture, base_model_name, get_lora_config())
-
-def create_ia3_model(model_architecture, base_model_name: str, **kwargs):
-    config_type="IA3"
-    return _build_model(config_type, model_architecture, base_model_name, get_ia3_config())
-
-def create_from_scratch(model_architecture, base_model_name: str, **kwargs):
-    config_type="BASE"
-    return _build_model(config_type, model_architecture, base_model_name, get_base_config(model_architecture))
-
-def save_merged_standalone(
-    base_model_name: str,
-    adapter_path: str,
-    output_dir: str,
-    tokenizer,
-):
-    if not os.path.isdir(adapter_path):
-        raise FileNotFoundError(
-            f"Adapter path not found: '{adapter_path}'. "
-            "Point to the artifacts directory of a completed training run."
-        )
-
-    logger.info(f"[save_merged] Loading base: {base_model_name}")
-    base_model = AutoModelForCausalLM.from_pretrained(
-        base_model_name,
-        torch_dtype         = torch.float32 if IS_MPS else torch.bfloat16,
-        device_map          = None,
-        attn_implementation = "eager",
+# =============================================================================
+# TRAIN
+# =============================================================================
+def train_model(model, train_ds, val_ds, tokenizer, collator, ta: dict):
+    args = TrainingArguments(
+        output_dir=ta["checkpoints_dir"],
+        num_train_epochs=ta["epochs"],
+        per_device_train_batch_size=ta["batch_size"],
+        per_device_eval_batch_size=ta["batch_size"],
+        gradient_accumulation_steps=ta["grad_accum"],
+        learning_rate=ta["learning_rate"],          # FIX (bug #5)
+        lr_scheduler_type=ta["lr_scheduler_type"],  # FIX (bug #5)
+        warmup_ratio=ta["warmup_ratio"],
+        weight_decay=ta["weight_decay"],
+        logging_dir=ta["logs_dir"],
+        logging_steps=ta["logging_steps"],
+        logging_strategy=ta["logging_strategy"],
+        eval_strategy=ta["evaluation_strategy"],
+        save_strategy=ta["save_strategy"],
+        save_total_limit=2,
+        fp16=ta["fp16"], bf16=ta["bf16"], tf32=ta["tf32"],
+        dataloader_num_workers=ta["dataloader_num_workers"],
+        dataloader_pin_memory=ta["dataloader_pin_memory"],
+        optim=ta["optim"],
+        gradient_checkpointing=ta["gradient_checkpoints"],
+        load_best_model_at_end=ta["load_best_model"],
+        metric_for_best_model=ta["metric_for_best_model"],
+        greater_is_better=ta["greater_is_better"],
+        report_to="none",
+        disable_tqdm=False,  # keep the native tqdm progress bar
+        run_name=ta["run_name"],
+        seed=ta["seed"],
     )
-
-    logger.info(f"[save_merged] Loading adapter from: {adapter_path}")
-    peft_model = PeftModel.from_pretrained(
-        base_model,
-        adapter_path,
-        is_trainable = False,
-    )
-
-    logger.info("[save_merged] Merging…")
-    merged = peft_model.merge_and_unload()
-
-    os.makedirs(output_dir, exist_ok=True)
-    logger.info(f"[save_merged] Saving merged model to: {output_dir}")
-    merged.save_pretrained(output_dir, safe_serialization=True)
-    tokenizer.save_pretrained(output_dir)
-
-    metadata = {
-        "source_base_model":  base_model_name,
-        "source_adapter_path": adapter_path,
-        "merged_model_path":  output_dir,
-        "torch_dtype":        "float32" if IS_MPS else "bfloat16",
-        "merge_strategy":     "peft.merge_and_unload",
-    }
-    with open(os.path.join(output_dir, "merge_metadata.json"), "w") as f:
-        json.dump(metadata, f, indent=2)
-
-    logger.info(f"[save_merged] ✔ Standalone model saved at: {output_dir}")
-    return output_dir
-
-# =============================================================================================
-# TRAINER WRAPPER
-# =============================================================================================
-def train_model(
-    model,
-    train_dataset,
-    val_dataset,
-    tokenizer,
-    custom_training_args: dict,
-):
-    training_args = TrainingArguments(
-        output_dir                  = custom_training_args["checkpoints_dir"],
-        num_train_epochs            = custom_training_args["epochs"],
-        per_device_train_batch_size = custom_training_args["batch_size"],
-        per_device_eval_batch_size  = custom_training_args["batch_size"],
-        gradient_accumulation_steps = custom_training_args["grad_accum"],
-        warmup_steps                = custom_training_args["warmup_steps"],
-        weight_decay                = custom_training_args["weight_decay"],
-        logging_dir                 = custom_training_args["logs_dir"],
-        logging_steps               = custom_training_args["logging_steps"],
-        eval_strategy               = custom_training_args["eval_strategy"],
-        save_strategy               = custom_training_args["save_strategy"],
-        fp16                        = custom_training_args["fp16"],
-        bf16                        = custom_training_args["bf16"],
-        tf32                        = custom_training_args["tf32"],
-        dataloader_num_workers      = custom_training_args["dataloader_num_workers"],
-        dataloader_pin_memory       = custom_training_args["dataloader_pin_memory"],
-        optim                       = custom_training_args["optim"],
-        gradient_checkpointing      = custom_training_args["gradient_checkpointing"],
-        load_best_model_at_end      = custom_training_args["load_best_model_at_end"],
-        report_to                   = "none",  
-        logging_strategy            = custom_training_args["logging_strategy"],
-        run_name                    = custom_training_args["run_name"],
-        metric_for_best_model       = custom_training_args["metric_for_best_model"],
-        greater_is_better           = custom_training_args["greater_is_better"],
-    )
-
     trainer = Trainer(
-        model         = model,
-        args          = training_args,
-        train_dataset = train_dataset,
-        eval_dataset  = val_dataset,
-        data_collator = OptimizedDataCollator(tokenizer),
-        callbacks     = [
-            EarlyStoppingCallback(
-                early_stopping_patience  = 2,
-                early_stopping_threshold = 0.0001,
-            )
-        ],
+        model=model, args=args, train_dataset=train_ds, eval_dataset=val_ds,
+        data_collator=collator,
+        callbacks=[EarlyStoppingCallback(ta["early_stopping_patience"],
+                                         ta["early_stopping_threshold"]),
+                   MLflowRealtimeCallback()],
     )
-
-    logger.info(f"Device used: {next(trainer.model.parameters()).device}")
+    logger.info(f"Active device: {next(trainer.model.parameters()).device}")
     trainer.train()
     return trainer
 
-# =============================================================================================
-# EXPERIMENT PARAMETERS
-# =============================================================================================
-parser = argparse.ArgumentParser(description="Training Script")
+# =============================================================================
+# CONFIG / CLI
+# =============================================================================
+def load_config(experiment_version: int):
+    path = PROJECT_PATH / "experiments" / f"exp-v{experiment_version}.yaml"
+    with open(path, "r") as f:
+        return yaml.safe_load(f), path
 
-parser.add_argument("--experiment_version", type=int, default=0, help="The experiment version")
-args = parser.parse_args()
 
-# experiment_version = args.experiment_version
-experiment_version=0
-CONFIG_PATH = PROJECT_PATH / "experiments" / f"exp-v{experiment_version}.yaml"
+def load_dataset() -> pl.DataFrame:
+    df = pl.scan_parquet(f"{DATASET_PATH}/{DATASET_NAME}").collect()
+    # Ensure the required columns are present.
+    missing = [c for c in (Q_COL, SQL_COL, TRAIN_COL) if c not in df.columns]
+    if missing:
+        raise KeyError(f"Missing dataset columns: {missing}. Available: {df.columns}")
+    return df
 
-with open(CONFIG_PATH, 'r') as f:
-    config = yaml.safe_load(f)
-
-TRAIN_FACTORY = {
-    "lora":    create_lora_model,
-    "ia3":     create_ia3_model,
-    "scratch": create_from_scratch
-}
-
-TRAIN_METHOD = config['train_method']
-TRAIN_ARCHITECTURE = config['architecture']
-EXPERIMENT_VERSION = config['experiment_version']
-DATASET_PARTITION = config['dataset_partition']
-DATASET_ARTEFACT_NAME = config['dataset_artefact_name']
-DATASET_ARTEFACT_VERSION = config['dataset_artefact_version']
-BASE_MODEL = config['base_model']
-MODEL_NAME = config['model_name']
-EPOCHS = config['epochs']
-BATCH_SIZE = config['batch_size']
-GRAD_ACCUM = config['grad_accum']
-LOGGING_STEPS = config['logging_steps']
-WEIGHT_DECAY = config['weight_decay']
-WARMUP_STEPS = config['warmup_steps']
-GRADIENT_CHECKPOINTING = config['gradient_checkpoints']
-LOGGING_STRATEGY = config['logging_strategy']
-EVALUATION_STRATEGY = config['evaluation_strategy']
-SAVE_STRATEGY = config['save_strategy']
-FP16 = config['fp16']
-BF16 = config['bf16']
-TF32 = config['tf32']
-DATALOADER_NUM_WORKERS = config['dataloader_num_workers']
-DATALOADER_PIN_MEMORY = config['dataloader_pin_memory']
-OPTIM = config['optim']
-LOAD_BEST_MODEL = config['load_best_model']
-GREATER_IS_BETTER = config['greater_is_better']
-METRIC_FOR_BEST_MODEL = config['metric_for_best_model']
-MAX_LENGTH = config['max_length']
-TRAIN_SPLIT = config['train_split']
-
-def _run_name(model_name: str, peft_type: str, version: str) -> str:
-    return f"{model_name}_{peft_type}_{version}"
-
-# =============================================================================================
+# =============================================================================
 # MAIN
-# =============================================================================================
+# =============================================================================
 def main():
-    mlflow_end_run()  
+    parser = argparse.ArgumentParser(description="Text2SQL training")
+    parser.add_argument("--experiment_version", type=int, default=0)
+    exp = parser.parse_args().experiment_version
 
-    dataset_partition = DATASET_PARTITION
-    libs_versions     = get_versions()
+    cfg, cfg_path = load_config(exp)
+    EXP = f"v{exp}"
 
-    logger.info("=" * 80)
-    logger.info(
-        f"  PIPELINE START  |  experiment={EXPERIMENT_VERSION}"
-        f"  |  partition={dataset_partition}  |  device={DEVICE}"
-    )
-    logger.info(f"  Model  : {BASE_MODEL}")
-    logger.info(f"  Method: {TRAIN_METHOD}")
-    logger.info("=" * 80)
+    # Baseline experiments (train_method == "none") have nothing to train. The
+    # base model's SQL generation is produced by generate_sql_preds.py (which
+    # loads the base model itself). So skip here BEFORE any HF download or model
+    # load — no point spending that time/memory in the training entrypoint.
+    if str(cfg.get("train_method", "none")).lower() == "none":
+        logger.banner(f"START | exp={EXP}", width=80)
+        logger.info(f"model={cfg.get('base_model')} | method=none | device={DEVICE}")
+        logger.info("Baseline (train_method=none): nothing to train; base-model "
+                    "generation/eval is handled by generate_sql_preds.py. "
+                    "Skipping model load to save time.")
+        logger.banner(f"SKIPPED (baseline) | exp={EXP}", width=80)
+        return
 
-    tokenizer = _load_tokenizer(BASE_MODEL)
+    token = os.environ.get("HF_TOKEN")
+    if not token:
+        raise ValueError("Set HF_TOKEN in the environment (export HF_TOKEN='...').")
+    login(token=token)
 
-    run_id  = _run_name(MODEL_NAME, TRAIN_METHOD, EXPERIMENT_VERSION)
-    model   = None
-    trainer = None
+    set_seed(cfg.get("seed", 42))
 
-    logger.info(f"\n{'─' * 80}")
-    logger.info(f"  ▶  {run_id}")
-    logger.info(f"{'─' * 80}\n")
+    mlflow.set_tracking_uri(build_mlflow_uri())
+    mlflow.set_experiment(PROJECT_NAME)
 
+    BASE_MODEL = cfg["base_model"]
+    METHOD = cfg["train_method"]
+    fp16, bf16, tf32 = resolve_precision(cfg["fp16"], cfg["bf16"], cfg["tf32"])
+    dtype = torch.float32 if IS_MPS else (torch.bfloat16 if bf16 else torch.float32)
+    run_id = f"{cfg['model_name']}_{METHOD}_{EXP}"
+
+    git = get_git_info()
+    logger.banner(f"START | exp={EXP}", width=80)
+    logger.info(f"model={BASE_MODEL} | method={METHOD} | device={DEVICE}")
+    logger.info(f"git: {git['git_branch']} @ {git['git_commit']}")
+
+    # Silence transformers' INFO noise (config dumps, "loading/saving ..."),
+    # while keeping the native tqdm progress bar (disable_tqdm=False).
+    transformers.utils.logging.set_verbosity_error()
+
+    tokenizer = load_tokenizer(BASE_MODEL)
+    model = trainer = None
+    train_ds = val_ds = None
+
+    mlflow_end_run()
     try:
-        # ------------------------------------------------------------------
-        # Dataset
-        # ------------------------------------------------------------------
-        logger.info("Loading dataset from local parquet…")
-        dataset_path = f"{DATASET_FULL_NAME}"
-        df = pl.scan_parquet(dataset_path, hive_partitioning=True).collect()
-        if dataset_partition != "all":
-            df = df.filter(pl.col("source") == dataset_partition)
+        # ── Data: train = train==1 (with internal val); test = train==0 ──────
+        df = load_dataset()
+        train_pool = df.filter(pl.col(TRAIN_COL) == 1)
+        test_df = df.filter(pl.col(TRAIN_COL) == 0)
+        logger.info(f"Data: {len(train_pool)} train(+val) | {len(test_df)} test (holdout)")
 
-        df_shuffled = df.sample(fraction=1.0, shuffle=True, seed=42)
-        train_dataset, val_dataset = prepare_data(
-            df_shuffled, tokenizer, TRAIN_SPLIT, MAX_LENGTH
-        )
-        total_steps = (len(train_dataset) // BATCH_SIZE) * EPOCHS // GRAD_ACCUM
+        mlflow.start_run(run_name=run_id, tags={
+            "experiment_version": EXP, "model_name": cfg["model_name"],
+            "train_method": METHOD, "architecture": cfg["architecture"],
+            "device": str(DEVICE), **git})
+        mlflow_log_params(get_dataset_fingerprint(df))
+        mlflow.log_artifact(str(cfg_path), artifact_path="config")
+        mlflow_log_params({
+            "base_model": BASE_MODEL, "train_method": METHOD, "architecture": cfg["architecture"],
+            "device": str(DEVICE),
+            "epochs": cfg["epochs"], "batch_size": cfg["batch_size"],
+            "grad_accum": cfg["grad_accum"], "learning_rate": cfg.get("learning_rate"),
+            "lr_scheduler": cfg.get("lr_scheduler_type"), "warmup_ratio": cfg.get("warmup_ratio"),
+            "lora_r": cfg.get("lora_r"), "lora_alpha": cfg.get("lora_alpha"),
+            "lora_dropout": cfg.get("lora_dropout"), "seed": cfg.get("seed", 42),
+            "fp16": fp16, "bf16": bf16, "tf32": tf32, "max_length": cfg["max_length"],
+            "n_train_pool": len(train_pool), "n_test_holdout": len(test_df),
+            "transformers": transformers.__version__, "torch": torch.__version__,
+        })
 
-        logger.info(
-            f"Dataset: {len(train_dataset)} train | "
-            f"{len(val_dataset)} val | {total_steps} steps"
-        )
+        # ── Model ─────────────────────────────────────────────────────────────
+        model, _ = build_model(BASE_MODEL, METHOD, cfg, dtype)
+        mlflow_log_params(get_model_summary(model))
 
-        # ------------------------------------------------------------------
-        # MLflow run
-        # ------------------------------------------------------------------
-        run_tags = {
-            "experiment_version": EXPERIMENT_VERSION,
-            "model_name":         MODEL_NAME,
-            "train_method":       TRAIN_METHOD,
-            "dataset_partition":  DATASET_PARTITION,
-            "architecture":       TRAIN_ARCHITECTURE,
-            "device":             str(DEVICE)
-        }
-        mlflow_start_run(run_name=run_id, tags=run_tags)
+        # train_method == "none" exits early in main(); only trained methods reach
+        # here. Evaluation during training is the Trainer's eval_loss on the
+        # internal validation split — it drives early stopping and best-checkpoint
+        # selection. Generation/execution scoring on the holdout is done separately
+        # by generate_sql_preds.py + score_predictions.py.
+        if METHOD != "none":
+            # ── Internal val split (does NOT touch the holdout) ───────────────
+            tr_df, vl_df = stratified_val_split(train_pool, cfg.get("val_fraction", 0.1),
+                                                cfg.get("seed", 42))
+            DS = CausalDataset
+            train_ds = DS(tr_df, tokenizer, cfg["max_length"])
+            val_ds = DS(vl_df, tokenizer, cfg["max_length"])
+            collator = CausalCollator(tokenizer)
 
-        run_params = {
-            "base_model":             BASE_MODEL,
-            "model_name":             MODEL_NAME,
-            "train_method":           TRAIN_METHOD,
-            "experiment_version":     EXPERIMENT_VERSION,
-            "dataset_partition":      DATASET_PARTITION,
-            "device":                 str(DEVICE),
-            "epochs":                 EPOCHS,
-            "batch_size":             BATCH_SIZE,
-            "grad_accum":             GRAD_ACCUM,
-            "warmup_steps":           WARMUP_STEPS,
-            "weight_decay":           WEIGHT_DECAY,
-            "optim":                  OPTIM,
-            "bf16":                   BF16,
-            "fp16":                   FP16,
-            "tf32":                   TF32,
-            "gradient_checkpointing": GRADIENT_CHECKPOINTING,
-            "transformers_version":   libs_versions.get("transformers"),
-            "torch_version":          libs_versions.get("torch"),
-            "cuda_version":           libs_versions.get("cuda"),
-            "mps":                    libs_versions.get("mps"),
-            "python_version":         libs_versions.get("python"),
-            "train_samples":          len(train_dataset),
-            "val_samples":            len(val_dataset),
-            "total_steps":            total_steps,
-        }
+            out_dir = f"{PROJECT_PATH}/models/experiments/{EXP}"
+            logs_dir = f"{out_dir}/logs"
+            os.makedirs(logs_dir, exist_ok=True)
 
-        mlflow_log_params(run_params)
+            # Guard: load_best_model_at_end requires compatible eval/save.
+            if cfg["load_best_model"] and cfg["evaluation_strategy"] != cfg["save_strategy"]:
+                raise ValueError("load_best_model=True requires evaluation_strategy == save_strategy.")
 
-        # ------------------------------------------------------------------
-        # Model
-        # ------------------------------------------------------------------
-        factory = TRAIN_FACTORY[TRAIN_METHOD]
-        model, model_config_dict = factory(TRAIN_ARCHITECTURE, BASE_MODEL, total_steps=total_steps)
-        mlflow_log_params({f"peft_cfg_{k}": v for k, v in model_config_dict.items()})
+            ta = {"checkpoints_dir": f"{out_dir}/checkpoints", "logs_dir": logs_dir,
+                  "epochs": cfg["epochs"], "batch_size": cfg["batch_size"],
+                  "grad_accum": cfg["grad_accum"], "learning_rate": cfg["learning_rate"],
+                  "lr_scheduler_type": cfg.get("lr_scheduler_type", "cosine"),
+                  "warmup_ratio": cfg.get("warmup_ratio", 0.06),
+                  "weight_decay": cfg["weight_decay"], "logging_steps": cfg["logging_steps"],
+                  "logging_strategy": cfg["logging_strategy"],
+                  "evaluation_strategy": cfg["evaluation_strategy"],
+                  "save_strategy": cfg["save_strategy"], "fp16": fp16, "bf16": bf16, "tf32": tf32,
+                  "dataloader_num_workers": 0 if not IS_CUDA else cfg["dataloader_num_workers"],
+                  "dataloader_pin_memory": False if not IS_CUDA else cfg["dataloader_pin_memory"],
+                  "optim": cfg["optim"], "gradient_checkpoints": cfg["gradient_checkpoints"],
+                  "load_best_model": cfg["load_best_model"],
+                  "metric_for_best_model": cfg["metric_for_best_model"],
+                  "greater_is_better": cfg["greater_is_better"],
+                  "early_stopping_patience": cfg["early_stopping_patience"],
+                  "early_stopping_threshold": cfg["early_stopping_threshold"],
+                  "run_name": run_id, "seed": cfg.get("seed", 42)}
 
-        # ------------------------------------------------------------------
-        # Training
-        # ------------------------------------------------------------------
-        output_dir = (
-            f"{PROJECT_PATH}/models/experiments/{EXPERIMENT_VERSION}"
-        )
-        os.makedirs(output_dir, exist_ok=True)
+            logger.info("Starting training…")
+            trainer = train_model(model, train_ds, val_ds, tokenizer, collator, ta)
 
-        custom_training_args = {
-            "checkpoints_dir":        f"{output_dir}/checkpoints",
-            "epochs":                 EPOCHS,
-            "batch_size":             BATCH_SIZE,
-            "grad_accum":             GRAD_ACCUM,
-            "warmup_steps":           WARMUP_STEPS,
-            "weight_decay":           WEIGHT_DECAY,
-            "logs_dir":               f"{output_dir}/logs",
-            "logging_steps":          LOGGING_STEPS,
-            "eval_strategy":          EVALUATION_STRATEGY,
-            "save_strategy":          SAVE_STRATEGY,
-            "fp16":                   FP16,
-            "bf16":                   BF16,
-            "tf32":                   TF32,
-            "gradient_checkpointing": GRADIENT_CHECKPOINTING,
-            "dataloader_num_workers": DATALOADER_NUM_WORKERS,
-            "dataloader_pin_memory":  DATALOADER_PIN_MEMORY,
-            "optim":                  OPTIM,
-            "load_best_model_at_end": LOAD_BEST_MODEL,
-            "report_to":              "none",
-            "logging_strategy":       LOGGING_STRATEGY,
-            "run_name":               run_id,
-            "metric_for_best_model":  METRIC_FOR_BEST_MODEL,
-            "greater_is_better":      GREATER_IS_BETTER,
-        }
-
-        logger.info("Starting training…")
-        trainer = train_model(
-            model,
-            train_dataset,
-            val_dataset,
-            tokenizer,
-            custom_training_args,
-        )
-
-        if trainer.state.log_history:
-            mlflow_log_training_history(trainer.state.log_history)
-
-        # ------------------------------------------------------------------
-        # Artifacts
-        # ------------------------------------------------------------------
-        artifact_metadata = {
-            "run_id":               run_id,
-            "base_model":           BASE_MODEL,
-            "model_name":           MODEL_NAME,
-            "train_method":         TRAIN_METHOD,
-            "experiment_version":   EXPERIMENT_VERSION,
-            "dataset_partition":    DATASET_PARTITION,
-            "train_samples":        len(train_dataset),
-            "val_samples":          len(val_dataset),
-            "total_steps":          total_steps,
-            "transformers_version": libs_versions.get("transformers"),
-            "torch_version":        libs_versions.get("torch"),
-            "cuda_version":         libs_versions.get("cuda"),
-            "python_version":       libs_versions.get("python"),
-        }
-        artifact_metadata.update(custom_training_args)
-
-        logger.info(f"Saving artifacts as '{run_id}'…")
-        artifact_dir = f"{output_dir}/artifacts"
-        save_training_artifacts(
-            trainer    = trainer,
-            tokenizer  = tokenizer,
-            output_dir = artifact_dir,
-            metadata   = artifact_metadata,
-        )
-
-        logger.info(f"✔ {run_id} done. Artifacts at: {artifact_dir}\n")
+            # ── Artifacts (best checkpoint, restored by load_best_model_at_end) ──
+            art = f"{out_dir}/artifacts"
+            os.makedirs(art, exist_ok=True)
+            trainer.model.save_pretrained(art)
+            tokenizer.save_pretrained(art)
+            mlflow.log_artifacts(art, artifact_path="model")
+            logger.info(f"✔ {run_id} complete. Artifacts at: {art}")
 
     except KeyboardInterrupt:
-        logger.warning(f"Pipeline interrupted by user at {run_id}")
+        logger.warning("Interrupted by user.")
         mlflow_end_run(status="KILLED")
         raise
-
     except Exception as e:
         logger.error(f"Error in {run_id}: {e}", exc_info=True)
         mlflow_end_run(status="FAILED")
-        logger.info("Continuing to next run…\n")
-
+        raise  # FIX (bug #12): do NOT swallow the failure — propagate to exit code != 0
     finally:
-        # ------------------------------------------------------------------
-        # Memory cleanup
-        # ------------------------------------------------------------------
         try:
             if trainer is not None:
-                for attr in (
-                    "model", "train_dataset", "eval_dataset",
-                    "data_collator", "optimizer", "lr_scheduler",
-                    "callback_handler",
-                ):
+                for attr in ("model", "train_dataset", "eval_dataset", "data_collator",
+                             "optimizer", "lr_scheduler", "callback_handler"):
                     setattr(trainer, attr, None)
                 del trainer
-
             if model is not None:
                 del model
-
-            del train_dataset, val_dataset
-
+            if train_ds is not None:
+                del train_ds
+            if val_ds is not None:
+                del val_ds
             gc.collect()
-
             if IS_CUDA:
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
-                torch.cuda.synchronize()
-                logger.info(
-                    f"CUDA allocated after cleanup: "
-                    f"{torch.cuda.memory_allocated() / 1e9:.3f} GB"
-                )
-
+                torch.cuda.empty_cache(); torch.cuda.ipc_collect()
             if IS_MPS:
                 torch.mps.empty_cache()
-                torch.mps.synchronize()
-                logger.info("MPS cache cleared.")
-
-        except Exception as cleanup_error:
-            logger.warning(f"Cleanup error in {run_id}: {cleanup_error}")
-
+        except Exception as ce:
+            logger.warning(f"Cleanup error: {ce}")
         mlflow_end_run()
 
-    logger.info("=" * 80)
-    logger.info(f"  PIPELINE COMPLETE  |  experiment={EXPERIMENT_VERSION}")
-    logger.info("=" * 80)
+    logger.banner(f"COMPLETE | exp={EXP}", width=80)
 
-# =============================================================================================
-# ENTRY POINT
-# =============================================================================================
+
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        logger.warning("Training pipeline interrupted by user.")
-        sys.exit(0)
-    except Exception as e:
-        logger.error(f"Fatal error: {e}", exc_info=True)
+        sys.exit(130)
+    except Exception:
         sys.exit(1)

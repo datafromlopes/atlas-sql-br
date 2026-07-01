@@ -1,22 +1,4 @@
-general:
-  project_name: geo-nlq-to-sql
-  project_path: atlas-sql-br
-dataset:
-  full: geo_dataset
-  type: parquet
-tf_idf_matrix:
-  name: tf_idf_sparse_matrix
-  type: npz
-tf_idf_features:
-  name: features
-  type: parquet
-data_aug_params:
-  nlp_vocab: pt_core_news_lg
-  nlp_language: pt
-  translator_model: facebook/nllb-200-distilled-600M
-  unmasker_model: neuralmind/bert-base-portuguese-cased
-  src_lang: por_Latn
-  tgt_lang: deu_Latn
-sql_validation:
-  input_file: "data/validation_dataset.json"
-  output_file: "data/predictions.json"
+project_name: atlas_sql_br
+project_path: atlas_sql_br
+dataset_name: atlas_sql_br.parquet
+dataset_validation_name: atlas_sql_br_validation.parquet

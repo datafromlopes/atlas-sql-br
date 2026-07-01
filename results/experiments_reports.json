@@ -1,0 +1,603 @@
+{
+  "generated_at": "2026-06-21T04:20:39.810197+00:00",
+  "db_used": true,
+  "compare_mode": "auto",
+  "experiments": {
+    "v0": {
+      "file": "/Users/diegolopes/repositories/atlas_sql_br/data/predictions/predictions_v0.json",
+      "experiment": "v0",
+      "n": 144,
+      "db_used": true,
+      "compare_mode": "auto",
+      "gold_exec_failures": 0,
+      "row_errors": 0,
+      "overall": {
+        "base": {
+          "execution_accuracy": 0.0,
+          "executable_rate": 0.0,
+          "ast_equivalence": 0.0,
+          "structural_f1": 0.0003,
+          "component_jaccard": 0.9931,
+          "string_exact": 0.0,
+          "string_similarity": 0.0432
+        },
+        "finetuned": {
+          "execution_accuracy": 0.0,
+          "executable_rate": 0.0,
+          "ast_equivalence": 0.0,
+          "structural_f1": 0.0003,
+          "component_jaccard": 0.9931,
+          "string_exact": 0.0,
+          "string_similarity": 0.0432
+        }
+      },
+      "by_level": {
+        "Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Fácil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Muito Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Médio": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        }
+      },
+      "failures_finetuned": {
+        "parse_error": 143,
+        "execution_error": 1,
+        "wrong_aggregation": 1,
+        "wrong_condition_op": 1,
+        "wrong_order_by": 1
+      },
+      "dataset_value_delta": {
+        "metric": "execution_accuracy",
+        "overall": 0.0,
+        "by_level": {
+          "Difícil": 0.0,
+          "Fácil": 0.0,
+          "Muito Difícil": 0.0,
+          "Médio": 0.0
+        }
+      }
+    },
+    "v1": {
+      "file": "/Users/diegolopes/repositories/atlas_sql_br/data/predictions/predictions_v1.json",
+      "experiment": "v1",
+      "n": 144,
+      "db_used": true,
+      "compare_mode": "auto",
+      "gold_exec_failures": 0,
+      "row_errors": 0,
+      "overall": {
+        "base": {
+          "execution_accuracy": 0.0,
+          "executable_rate": 0.0,
+          "ast_equivalence": 0.0,
+          "structural_f1": 0.0157,
+          "component_jaccard": 0.9028,
+          "string_exact": 0.0,
+          "string_similarity": 0.0586
+        },
+        "finetuned": {
+          "execution_accuracy": 0.2778,
+          "executable_rate": 0.5833,
+          "ast_equivalence": 0.1944,
+          "structural_f1": 0.7408,
+          "component_jaccard": 0.565,
+          "string_exact": 0.1944,
+          "string_similarity": 0.6823
+        }
+      },
+      "by_level": {
+        "Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0556,
+            "executable_rate": 0.3333,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Fácil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0833,
+            "executable_rate": 0.6111,
+            "ast_equivalence": 0.1111
+          }
+        },
+        "Muito Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.6667,
+            "executable_rate": 0.8889,
+            "ast_equivalence": 0.4722
+          }
+        },
+        "Médio": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.3056,
+            "executable_rate": 0.5,
+            "ast_equivalence": 0.1944
+          }
+        }
+      },
+      "failures_finetuned": {
+        "missing_join": 63,
+        "wrong_condition_value": 49,
+        "execution_error": 48,
+        "wrong_columns": 40,
+        "wrong_order_by": 40,
+        "correct": 28,
+        "wrong_aggregation": 26,
+        "wrong_condition_op": 25,
+        "missing_group_by": 24,
+        "parse_error": 15,
+        "unknown": 15,
+        "wrong_join_condition": 4,
+        "wrong_limit": 3
+      },
+      "dataset_value_delta": {
+        "metric": "execution_accuracy",
+        "overall": 0.2778,
+        "by_level": {
+          "Difícil": 0.0556,
+          "Fácil": 0.0833,
+          "Muito Difícil": 0.6667,
+          "Médio": 0.3056
+        }
+      }
+    },
+    "v2": {
+      "file": "/Users/diegolopes/repositories/atlas_sql_br/data/predictions/predictions_v2.json",
+      "experiment": "v2",
+      "n": 144,
+      "db_used": true,
+      "compare_mode": "auto",
+      "gold_exec_failures": 0,
+      "row_errors": 0,
+      "overall": {
+        "base": {
+          "execution_accuracy": 0.0,
+          "executable_rate": 0.0,
+          "ast_equivalence": 0.0,
+          "structural_f1": 0.0,
+          "component_jaccard": 1.0,
+          "string_exact": 0.0,
+          "string_similarity": 0.0408
+        },
+        "finetuned": {
+          "execution_accuracy": 0.0,
+          "executable_rate": 0.0,
+          "ast_equivalence": 0.0,
+          "structural_f1": 0.0,
+          "component_jaccard": 1.0,
+          "string_exact": 0.0,
+          "string_similarity": 0.0408
+        }
+      },
+      "by_level": {
+        "Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Fácil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Muito Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Médio": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        }
+      },
+      "failures_finetuned": {
+        "parse_error": 144
+      },
+      "dataset_value_delta": {
+        "metric": "execution_accuracy",
+        "overall": 0.0,
+        "by_level": {
+          "Difícil": 0.0,
+          "Fácil": 0.0,
+          "Muito Difícil": 0.0,
+          "Médio": 0.0
+        }
+      }
+    },
+    "v3": {
+      "file": "/Users/diegolopes/repositories/atlas_sql_br/data/predictions/predictions_v3.json",
+      "experiment": "v3",
+      "n": 144,
+      "db_used": true,
+      "compare_mode": "auto",
+      "gold_exec_failures": 0,
+      "row_errors": 0,
+      "overall": {
+        "base": {
+          "execution_accuracy": 0.0,
+          "executable_rate": 0.0,
+          "ast_equivalence": 0.0,
+          "structural_f1": 0.0,
+          "component_jaccard": 1.0,
+          "string_exact": 0.0,
+          "string_similarity": 0.0397
+        },
+        "finetuned": {
+          "execution_accuracy": 0.7014,
+          "executable_rate": 1.0,
+          "ast_equivalence": 0.5625,
+          "structural_f1": 0.9852,
+          "component_jaccard": 0.922,
+          "string_exact": 0.5625,
+          "string_similarity": 0.9833
+        }
+      },
+      "by_level": {
+        "Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.6944,
+            "executable_rate": 1.0,
+            "ast_equivalence": 0.5833
+          }
+        },
+        "Fácil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.6389,
+            "executable_rate": 1.0,
+            "ast_equivalence": 0.6667
+          }
+        },
+        "Muito Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.7222,
+            "executable_rate": 1.0,
+            "ast_equivalence": 0.5556
+          }
+        },
+        "Médio": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.75,
+            "executable_rate": 1.0,
+            "ast_equivalence": 0.4444
+          }
+        }
+      },
+      "failures_finetuned": {
+        "correct": 81,
+        "wrong_condition_value": 27,
+        "unknown": 16,
+        "wrong_join_condition": 14,
+        "wrong_columns": 6,
+        "missing_join": 3,
+        "wrong_limit": 1
+      },
+      "dataset_value_delta": {
+        "metric": "execution_accuracy",
+        "overall": 0.7014,
+        "by_level": {
+          "Difícil": 0.6944,
+          "Fácil": 0.6389,
+          "Muito Difícil": 0.7222,
+          "Médio": 0.75
+        }
+      }
+    },
+    "v4": {
+      "file": "/Users/diegolopes/repositories/atlas_sql_br/data/predictions/predictions_v4.json",
+      "experiment": "v4",
+      "n": 144,
+      "db_used": true,
+      "compare_mode": "auto",
+      "gold_exec_failures": 0,
+      "row_errors": 0,
+      "overall": {
+        "base": {
+          "execution_accuracy": 0.0,
+          "executable_rate": 0.0,
+          "ast_equivalence": 0.0,
+          "structural_f1": 0.0,
+          "component_jaccard": 1.0,
+          "string_exact": 0.0,
+          "string_similarity": 0.0397
+        },
+        "finetuned": {
+          "execution_accuracy": 0.0,
+          "executable_rate": 0.0,
+          "ast_equivalence": 0.0,
+          "structural_f1": 0.23,
+          "component_jaccard": 0.1528,
+          "string_exact": 0.0,
+          "string_similarity": 0.1631
+        }
+      },
+      "by_level": {
+        "Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Fácil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Muito Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Médio": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        }
+      },
+      "failures_finetuned": {
+        "execution_error": 124,
+        "wrong_order_by": 109,
+        "wrong_columns": 91,
+        "wrong_condition_value": 82,
+        "missing_join": 78,
+        "missing_distinct": 62,
+        "missing_group_by": 50,
+        "wrong_join_condition": 38,
+        "wrong_condition_op": 35,
+        "wrong_aggregation": 33,
+        "wrong_limit": 20,
+        "parse_error": 20
+      },
+      "dataset_value_delta": {
+        "metric": "execution_accuracy",
+        "overall": 0.0,
+        "by_level": {
+          "Difícil": 0.0,
+          "Fácil": 0.0,
+          "Muito Difícil": 0.0,
+          "Médio": 0.0
+        }
+      }
+    },
+    "v5": {
+      "file": "/Users/diegolopes/repositories/atlas_sql_br/data/predictions/predictions_v5.json",
+      "experiment": "v5",
+      "n": 144,
+      "db_used": true,
+      "compare_mode": "auto",
+      "gold_exec_failures": 0,
+      "row_errors": 0,
+      "overall": {
+        "base": {
+          "execution_accuracy": 0.0,
+          "executable_rate": 0.0,
+          "ast_equivalence": 0.0,
+          "structural_f1": 0.0157,
+          "component_jaccard": 0.9028,
+          "string_exact": 0.0,
+          "string_similarity": 0.0586
+        },
+        "finetuned": {
+          "execution_accuracy": 0.0,
+          "executable_rate": 0.0,
+          "ast_equivalence": 0.0,
+          "structural_f1": 0.1069,
+          "component_jaccard": 0.5035,
+          "string_exact": 0.0,
+          "string_similarity": 0.1243
+        }
+      },
+      "by_level": {
+        "Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Fácil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Muito Difícil": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        },
+        "Médio": {
+          "base": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          },
+          "finetuned": {
+            "execution_accuracy": 0.0,
+            "executable_rate": 0.0,
+            "ast_equivalence": 0.0
+          }
+        }
+      },
+      "failures_finetuned": {
+        "parse_error": 72,
+        "execution_error": 72,
+        "missing_join": 58,
+        "wrong_columns": 47,
+        "wrong_order_by": 43,
+        "wrong_condition_value": 40,
+        "wrong_condition_op": 29,
+        "wrong_aggregation": 25,
+        "missing_group_by": 23,
+        "wrong_limit": 7,
+        "wrong_join_condition": 5,
+        "missing_having": 1
+      },
+      "dataset_value_delta": {
+        "metric": "execution_accuracy",
+        "overall": 0.0,
+        "by_level": {
+          "Difícil": 0.0,
+          "Fácil": 0.0,
+          "Muito Difícil": 0.0,
+          "Médio": 0.0
+        }
+      }
+    }
+  }
+}

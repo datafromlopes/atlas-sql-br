@@ -1,0 +1,1150 @@
+id,question,level,sql_code,train
+FV0001,Quais escolas de Salvador estão a até 15 km do centro do município?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Salvador'
+  AND ST_DWithin(e.geometry::geography, ST_Centroid(mu.geometry)::geography, 15000);",0
+FV0002,Quais escolas de Fortaleza estão a até 10 km do centro do município?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Fortaleza'
+  AND ST_DWithin(e.geometry::geography, ST_Centroid(mu.geometry)::geography, 10000);",0
+FV0003,Quais escolas de Belo Horizonte estão a até 4 km do centro do município?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Belo Horizonte'
+  AND ST_DWithin(e.geometry::geography, ST_Centroid(mu.geometry)::geography, 4000);",0
+FV0004,"Quais as 20 escolas mais próximas da coordenada central de São Luís, com a distância em metros?",Fácil,"SELECT e.nm_entidade,
+       ROUND(ST_Distance(e.geometry::geography, ST_SetSRID(ST_MakePoint(-44.3026, -2.5372), 4674)::geography)::numeric, 2) AS dist_m
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+ORDER BY dist_m ASC
+LIMIT 20;",0
+FV0005,"Quais as 40 escolas mais próximas da coordenada central de Fortaleza, com a distância em metros?",Fácil,"SELECT e.nm_entidade,
+       ROUND(ST_Distance(e.geometry::geography, ST_SetSRID(ST_MakePoint(-38.531, -3.7102), 4674)::geography)::numeric, 2) AS dist_m
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+ORDER BY dist_m ASC
+LIMIT 40;",0
+FV0006,Liste as escolas mais próximas do centro de Teresina com a distância em metros (as 30 primeiras).,Fácil,"SELECT e.nm_entidade,
+       ROUND(ST_Distance(e.geometry::geography, ST_SetSRID(ST_MakePoint(-42.8118, -5.0934), 4674)::geography)::numeric, 2) AS dist_m
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+ORDER BY dist_m ASC
+LIMIT 30;",0
+FV0007,Quais escolas estão a até 3 km de algum CRAS no município de Campo Grande?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN cras c ON ST_DWithin(e.geometry::geography, c.geometry::geography, 3000)
+WHERE c.nm_mun = 'Campo Grande';",0
+FV0008,Quais escolas estão a até 5 km de algum CREAS no município de Recife?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN creas cr ON ST_DWithin(e.geometry::geography, cr.geometry::geography, 5000)
+WHERE cr.nm_mun = 'Recife';",0
+FV0009,Liste escolas a no máximo 2 km de um CREAS em Maceió.,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN creas cr ON ST_DWithin(e.geometry::geography, cr.geometry::geography, 2000)
+WHERE cr.nm_mun = 'Maceió';",0
+FV0010,Qual a área aproximada (km²) da região central do município de Maceió?,Fácil,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6)::numeric, 2) AS area_inter_km2
+FROM municipio mu
+WHERE mu.nm_mun = 'Maceió';",0
+FV0011,Qual a área aproximada (km²) da região central do município de Rio de Janeiro?,Fácil,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6)::numeric, 2) AS area_inter_km2
+FROM municipio mu
+WHERE mu.nm_mun = 'Rio de Janeiro';",0
+FV0012,Qual a área aproximada (km²) da região central do município de João Pessoa?,Fácil,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6)::numeric, 2) AS area_inter_km2
+FROM municipio mu
+WHERE mu.nm_mun = 'João Pessoa';",0
+FV0013,Quais escolas estão a até 20 km do centro de Rio de Janeiro?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+WHERE ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-43.1914, -22.9212), 4674)::geography, 20000), e.geometry::geography);",0
+FV0014,Quais escolas estão a até 2 km do centro de Campo Grande?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+WHERE ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-54.6406, -20.4667), 4674)::geography, 2000), e.geometry::geography);",0
+FV0015,Quais escolas estão a até 8 km do centro de Natal?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+WHERE ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-35.2172, -5.789), 4674)::geography, 8000), e.geometry::geography);",0
+FV0016,Quais municípios de Rio Grande do Sul têm área menor ou igual a 400 km²?,Fácil,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Rio Grande do Sul' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 <= 400
+ORDER BY area_km2;",0
+FV0017,Quais municípios de Pernambuco têm área menor ou igual a 250 km²?,Fácil,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Pernambuco' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 <= 250
+ORDER BY area_km2;",0
+FV0018,Quais municípios de Piauí têm área menor ou igual a 150 km²?,Fácil,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Piauí' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 <= 150
+ORDER BY area_km2;",0
+FV0019,Quais escolas estão localizadas no município de Palmas?,Fácil,"SELECT e.nm_entidade, e.cd_uf
+FROM escola e
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Palmas';",0
+FV0020,Quais escolas estão localizadas no município de Vitória?,Fácil,"SELECT e.nm_entidade, e.cd_uf
+FROM escola e
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Vitória';",0
+FV0021,Liste as escolas localizadas no município de Aracaju.,Fácil,"SELECT e.nm_entidade, e.cd_uf
+FROM escola e
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Aracaju';",0
+FV0022,Liste as escolas no território do município de Recife.,Fácil,"SELECT e.nm_entidade, e.cd_uf
+FROM escola e
+JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Recife';",0
+FV0023,Liste as escolas no território do município de Rio de Janeiro.,Fácil,"SELECT e.nm_entidade, e.cd_uf
+FROM escola e
+JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Rio de Janeiro';",0
+FV0024,Quais escolas estão no território do município de Belo Horizonte?,Fácil,"SELECT e.nm_entidade, e.cd_uf
+FROM escola e
+JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Belo Horizonte';",0
+FV0025,Liste as escolas dentro do município de Uberlândia.,Fácil,"SELECT e.nm_entidade, e.cd_uf
+FROM escola e
+JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+WHERE mu.nm_mun = 'Uberlândia';",0
+FV0026,Liste as escolas dentro do município de São Luís.,Fácil,"SELECT e.nm_entidade, e.cd_uf
+FROM escola e
+JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+WHERE mu.nm_mun = 'São Luís';",0
+FV0027,Quais escolas estão dentro do município de Recife?,Fácil,"SELECT e.nm_entidade, e.cd_uf
+FROM escola e
+JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+WHERE mu.nm_mun = 'Recife';",0
+FV0028,Liste as escolas a no máximo 8 km do centro de Belo Horizonte.,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-43.9349, -19.9106), 4674)::geography, 8000);",0
+FV0029,Quais escolas estão a até 8 km do centro de Manaus?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-60.0327, -3.1113), 4674)::geography, 8000);",0
+FV0030,Quais escolas estão a até 2 km do centro de Contagem?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-44.0401, -19.9216), 4674)::geography, 2000);",0
+FV0031,Quais escolas estão a até 15 km do centro de Belo Horizonte?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-43.9249, -19.9331), 4674)::geography, 15000);",0
+FV0032,Quais escolas estão a até 5 km do centro de São Paulo?,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-46.6253, -23.5658), 4674)::geography, 5000);",0
+FV0033,Liste as escolas a no máximo 20 km do centro de Campo Grande.,Fácil,"SELECT e.nm_entidade
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-54.6563, -20.4734), 4674)::geography, 20000);",0
+FV0034,Qual a área em km² de cada município de Piauí?,Fácil,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Piauí'
+ORDER BY area_km2 DESC;",0
+FV0035,Qual a área em km² de cada município de Pará?,Fácil,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Pará'
+ORDER BY area_km2 DESC;",0
+FV0036,Qual a área em km² de cada município de Amapá?,Fácil,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Amapá'
+ORDER BY area_km2 DESC;",0
+MV0001,"Em Aracaju, quais escolas com banheiro adaptado para PNE estão a até 8 km do centro do município?",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Aracaju' AND md.in_banheiro_pne = 1
+  AND ST_DWithin(e.geometry::geography, ST_Centroid(mu.geometry)::geography, 8000);",0
+MV0002,"Em João Pessoa, quais escolas com cozinha estão a até 6 km do centro do município?",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'João Pessoa' AND md.in_cozinha = 1
+  AND ST_DWithin(e.geometry::geography, ST_Centroid(mu.geometry)::geography, 6000);",0
+MV0003,"Em Manaus, quais escolas com água potável estão a até 4 km do centro do município?",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Manaus' AND md.in_agua_potavel = 1
+  AND ST_DWithin(e.geometry::geography, ST_Centroid(mu.geometry)::geography, 4000);",0
+MV0004,"Quais escolas com internet de banda larga em Vitória, e a que distância em metros do centro do município?",Médio,"SELECT e.nm_entidade, mu.nm_mun,
+       ROUND(ST_Distance(e.geometry::geography, ST_SetSRID(ST_MakePoint(-40.3375, -20.3279), 4674)::geography)::numeric, 2) AS dist_m
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Vitória' AND md.in_banda_larga = 1
+ORDER BY dist_m ASC;",0
+MV0005,"Quais escolas com biblioteca em Fortaleza, e a que distância em metros do centro do município?",Médio,"SELECT e.nm_entidade, mu.nm_mun,
+       ROUND(ST_Distance(e.geometry::geography, ST_SetSRID(ST_MakePoint(-38.5376, -3.7459), 4674)::geography)::numeric, 2) AS dist_m
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Fortaleza' AND md.in_biblioteca = 1
+ORDER BY dist_m ASC;",0
+MV0006,"Quais escolas com rampas de acessibilidade em Maceió, e a que distância em metros do centro do município?",Médio,"SELECT e.nm_entidade, mu.nm_mun,
+       ROUND(ST_Distance(e.geometry::geography, ST_SetSRID(ST_MakePoint(-35.7233, -9.6678), 4674)::geography)::numeric, 2) AS dist_m
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Maceió' AND md.in_acessibilidade_rampas = 1
+ORDER BY dist_m ASC;",0
+MV0007,Quais escolas com refeitório estão a até 3 km de algum CREAS em Uberlândia?,Médio,"SELECT e.nm_entidade, cr.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN creas cr ON ST_DWithin(e.geometry::geography, cr.geometry::geography, 3000)
+WHERE cr.nm_mun = 'Uberlândia' AND md.in_refeitorio = 1;",0
+MV0008,Quais escolas com energia da rede pública estão a até 15 km de algum CREAS em Belém?,Médio,"SELECT e.nm_entidade, cr.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN creas cr ON ST_DWithin(e.geometry::geography, cr.geometry::geography, 15000)
+WHERE cr.nm_mun = 'Belém' AND md.in_energia_rede_publica = 1;",0
+MV0009,Quais escolas com laboratório de educação profissional estão a até 15 km de algum CRAS em Belém?,Médio,"SELECT e.nm_entidade, c.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN cras c ON ST_DWithin(e.geometry::geography, c.geometry::geography, 15000)
+WHERE c.nm_mun = 'Belém' AND md.in_laboratorio_educ_prof = 1;",0
+MV0010,"Para os municípios de Ceará, qual a área aproximada (km²) da região central de cada um?",Médio,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6)::numeric, 2) AS area_inter_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Ceará'
+ORDER BY area_inter_km2 DESC;",0
+MV0011,"Para os municípios de Rio de Janeiro, qual a área aproximada (km²) da região central de cada um?",Médio,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6)::numeric, 2) AS area_inter_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Rio de Janeiro'
+ORDER BY area_inter_km2 DESC;",0
+MV0012,"Para os municípios de Espírito Santo, qual a área aproximada (km²) da região central de cada um?",Médio,"SELECT mu.nm_mun, ROUND((ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6)::numeric, 2) AS area_inter_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Espírito Santo'
+ORDER BY area_inter_km2 DESC;",0
+MV0013,Quais escolas com energia da rede pública ficam num raio de 10 km do centro de Contagem?,Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE md.in_energia_rede_publica = 1
+  AND ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-44.0683, -19.9337), 4674)::geography, 10000), e.geometry::geography);",0
+MV0014,Quais escolas com banheiro adaptado para PNE ficam num raio de 10 km do centro de Contagem?,Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE md.in_banheiro_pne = 1
+  AND ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-44.0432, -19.9428), 4674)::geography, 10000), e.geometry::geography);",0
+MV0015,Quais escolas com cozinha ficam num raio de 5 km do centro de São Luís?,Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE md.in_cozinha = 1
+  AND ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-44.3178, -2.5348), 4674)::geography, 5000), e.geometry::geography);",0
+MV0016,"Liste os municípios de Paraná com área até 80 km² que possuem ao menos uma escola, com o nome da escola.",Médio,"SELECT mu.nm_mun, e.nm_entidade, ROUND((ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN escola e ON ST_Contains(mu.geometry, e.geometry)
+WHERE uf.nm_uf = 'Paraná' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 <= 80;",0
+MV0017,"Liste os municípios de Rondônia com área até 400 km² que possuem ao menos uma escola, com o nome da escola.",Médio,"SELECT mu.nm_mun, e.nm_entidade, ROUND((ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN escola e ON ST_Contains(mu.geometry, e.geometry)
+WHERE uf.nm_uf = 'Rondônia' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 <= 400;",0
+MV0018,"Liste os municípios de Mato Grosso do Sul com área até 100 km² que possuem ao menos uma escola, com o nome da escola.",Médio,"SELECT mu.nm_mun, e.nm_entidade, ROUND((ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN escola e ON ST_Contains(mu.geometry, e.geometry)
+WHERE uf.nm_uf = 'Mato Grosso do Sul' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 <= 100;",0
+MV0019,"Liste as escolas do estado de Rio de Janeiro que possuem laboratório de ciências, informando o município.",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Rio de Janeiro' AND md.in_laboratorio_ciencias = 1;",0
+MV0020,"Liste as escolas do estado de Rio Grande do Sul que possuem auditório, informando o município.",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Rio Grande do Sul' AND md.in_auditorio = 1;",0
+MV0021,"Liste as escolas do estado de Pernambuco que possuem internet, informando o município.",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Pernambuco' AND md.in_internet = 1;",0
+MV0022,Quais escolas com refeitório ficam no estado de Sergipe? Mostre o município.,Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Sergipe' AND md.in_refeitorio = 1;",0
+MV0023,"Liste as escolas do estado de Paraná que possuem banheiro adaptado para PNE, informando o município.",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Paraná' AND md.in_banheiro_pne = 1;",0
+MV0024,"Liste as escolas do estado de Tocantins que possuem quadra de esportes, informando o município.",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Tocantins' AND md.in_quadra_esportes = 1;",0
+MV0025,Quais escolas com energia da rede pública ficam no estado de Pernambuco? Mostre o município.,Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Pernambuco' AND md.in_energia_rede_publica = 1;",0
+MV0026,"Liste as escolas do estado de Minas Gerais que possuem laboratório de informática, informando o município.",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Minas Gerais' AND md.in_laboratorio_informatica = 1;",0
+MV0027,"Liste as escolas do estado de Minas Gerais que possuem internet de banda larga, informando o município.",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Minas Gerais' AND md.in_banda_larga = 1;",0
+MV0028,"Quais escolas com alimentação escolar estão a até 10 km do centro de Rio de Janeiro, no estado de Mato Grosso do Sul?",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.cd_uf = (SELECT cd_uf FROM unidade_federativa WHERE nm_uf = 'Mato Grosso do Sul')
+  AND md.in_alimentacao = 1
+  AND ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-43.2165, -22.9023), 4674)::geography, 10000);",0
+MV0029,"Quais escolas com quadra de esportes coberta estão a até 12 km do centro de Palmas, no estado de Espírito Santo?",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.cd_uf = (SELECT cd_uf FROM unidade_federativa WHERE nm_uf = 'Espírito Santo')
+  AND md.in_quadra_esportes_coberta = 1
+  AND ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-48.3378, -10.1866), 4674)::geography, 12000);",0
+MV0030,"Quais escolas com laboratório de informática estão a até 2 km do centro de São Luís, no estado de Tocantins?",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.cd_uf = (SELECT cd_uf FROM unidade_federativa WHERE nm_uf = 'Tocantins')
+  AND md.in_laboratorio_informatica = 1
+  AND ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-44.3201, -2.536), 4674)::geography, 2000);",0
+MV0031,"Quais escolas com biblioteca estão a até 10 km do centro de Campo Grande, no estado de Amazonas?",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.cd_uf = (SELECT cd_uf FROM unidade_federativa WHERE nm_uf = 'Amazonas')
+  AND md.in_biblioteca = 1
+  AND ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-54.6373, -20.4874), 4674)::geography, 10000);",0
+MV0032,"Quais escolas com alimentação escolar estão a até 20 km do centro de Belo Horizonte, no estado de São Paulo?",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.cd_uf = (SELECT cd_uf FROM unidade_federativa WHERE nm_uf = 'São Paulo')
+  AND md.in_alimentacao = 1
+  AND ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-43.9563, -19.929), 4674)::geography, 20000);",0
+MV0033,"Quais escolas com laboratório de ciências estão a até 2 km do centro de Natal, no estado de Maranhão?",Médio,"SELECT e.nm_entidade, mu.nm_mun
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.cd_uf = (SELECT cd_uf FROM unidade_federativa WHERE nm_uf = 'Maranhão')
+  AND md.in_laboratorio_ciencias = 1
+  AND ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-35.2021, -5.7894), 4674)::geography, 2000);",0
+MV0034,"Para cada município de Ceará, qual a extensão aproximada das divisas em km?",Médio,"SELECT mu.nm_mun, ROUND((ST_Length(ST_Transform(ST_Boundary(mu.geometry), 5880)) / 1000)::numeric, 2) AS perimetro_km
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Ceará'
+ORDER BY perimetro_km DESC;",0
+MV0035,"Para cada município de Amapá, qual a extensão aproximada das divisas em km?",Médio,"SELECT mu.nm_mun, ROUND((ST_Length(ST_Transform(ST_Boundary(mu.geometry), 5880)) / 1000)::numeric, 2) AS perimetro_km
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Amapá'
+ORDER BY perimetro_km DESC;",0
+MV0036,"Para cada município de Sergipe, qual a extensão aproximada das divisas em km?",Médio,"SELECT mu.nm_mun, ROUND((ST_Length(ST_Transform(ST_Boundary(mu.geometry), 5880)) / 1000)::numeric, 2) AS perimetro_km
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Sergipe'
+ORDER BY perimetro_km DESC;",0
+DV0001,"Em Pará, qual a distância média (m) das escolas ao centro de seu município, por município?",Difícil,"SELECT mu.nm_mun,
+       ROUND(AVG(ST_Distance(e.geometry::geography, ST_Centroid(mu.geometry)::geography))::numeric, 2) AS dist_media_m
+FROM escola e
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Pará'
+GROUP BY mu.nm_mun
+ORDER BY dist_media_m DESC;",0
+DV0002,"Em Pernambuco, qual a distância média (m) das escolas ao centro de seu município, por município?",Difícil,"SELECT mu.nm_mun,
+       ROUND(AVG(ST_Distance(e.geometry::geography, ST_Centroid(mu.geometry)::geography))::numeric, 2) AS dist_media_m
+FROM escola e
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Pernambuco'
+GROUP BY mu.nm_mun
+ORDER BY dist_media_m DESC;",0
+DV0003,"Em Santa Catarina, qual a distância média (m) das escolas ao centro de seu município, por município?",Difícil,"SELECT mu.nm_mun,
+       ROUND(AVG(ST_Distance(e.geometry::geography, ST_Centroid(mu.geometry)::geography))::numeric, 2) AS dist_media_m
+FROM escola e
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+WHERE uf.nm_uf = 'Santa Catarina'
+GROUP BY mu.nm_mun
+ORDER BY dist_media_m DESC;",0
+DV0004,"Em Natal, qual a distância média em metros das escolas até o CRAS mais próximo, por dependência administrativa?",Difícil,"SELECT e.tp_depende,
+       ROUND(AVG(d.dist_m)::numeric, 2) AS media_m
+FROM escola e
+JOIN LATERAL (
+  SELECT MIN(ST_Distance(e.geometry::geography, c.geometry::geography)) AS dist_m
+  FROM cras c WHERE c.nm_mun = 'Natal'
+) d ON TRUE
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Natal'
+GROUP BY e.tp_depende
+ORDER BY media_m;",0
+DV0005,"Em Campo Grande, qual a distância média em metros das escolas até o CRAS mais próximo, por dependência administrativa?",Difícil,"SELECT e.tp_depende,
+       ROUND(AVG(d.dist_m)::numeric, 2) AS media_m
+FROM escola e
+JOIN LATERAL (
+  SELECT MIN(ST_Distance(e.geometry::geography, c.geometry::geography)) AS dist_m
+  FROM cras c WHERE c.nm_mun = 'Campo Grande'
+) d ON TRUE
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Campo Grande'
+GROUP BY e.tp_depende
+ORDER BY media_m;",0
+DV0006,"Em Belo Horizonte, qual a distância média em metros das escolas até o CREAS mais próximo, por dependência administrativa?",Difícil,"SELECT e.tp_depende,
+       ROUND(AVG(d.dist_m)::numeric, 2) AS media_m
+FROM escola e
+JOIN LATERAL (
+  SELECT MIN(ST_Distance(e.geometry::geography, cr.geometry::geography)) AS dist_m
+  FROM creas cr WHERE cr.nm_mun = 'Belo Horizonte'
+) d ON TRUE
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+WHERE mu.nm_mun = 'Belo Horizonte'
+GROUP BY e.tp_depende
+ORDER BY media_m;",0
+DV0007,"Em Goiânia, quantas escolas estão a até 12 km de cada CRAS?",Difícil,"SELECT c.nu_identif, COUNT(DISTINCT e.cd_entidade) AS n_escolas
+FROM cras c
+JOIN escola e ON ST_DWithin(c.geometry::geography, e.geometry::geography, 12000)
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE c.nm_mun = 'Goiânia'
+GROUP BY c.nu_identif
+ORDER BY n_escolas DESC;",0
+DV0008,"Em Rio de Janeiro, quantas escolas estão a até 20 km de cada CREAS?",Difícil,"SELECT cr.nu_identif, COUNT(DISTINCT e.cd_entidade) AS n_escolas
+FROM creas cr
+JOIN escola e ON ST_DWithin(cr.geometry::geography, e.geometry::geography, 20000)
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE cr.nm_mun = 'Rio de Janeiro'
+GROUP BY cr.nu_identif
+ORDER BY n_escolas DESC;",0
+DV0009,"Em Porto Alegre, quantas escolas estão a até 15 km de cada CRAS?",Difícil,"SELECT c.nu_identif, COUNT(DISTINCT e.cd_entidade) AS n_escolas
+FROM cras c
+JOIN escola e ON ST_DWithin(c.geometry::geography, e.geometry::geography, 15000)
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE c.nm_mun = 'Porto Alegre'
+GROUP BY c.nu_identif
+ORDER BY n_escolas DESC;",0
+DV0010,"Na região Nordeste, para municípios com área acima de 500 km², qual a média das áreas das regiões centrais por estado?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6)::numeric, 2) AS media_inter_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Nordeste' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 > 500
+GROUP BY uf.nm_uf
+ORDER BY media_inter_km2 DESC;",0
+DV0011,"Na região Centro-Oeste, para municípios com área acima de 80 km², qual a média das áreas das regiões centrais por estado?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6)::numeric, 2) AS media_inter_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Centro-Oeste' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 > 80
+GROUP BY uf.nm_uf
+ORDER BY media_inter_km2 DESC;",0
+DV0012,"Por estado da região Sudeste, qual a máxima das áreas das regiões centrais nos municípios com mais de 200 km²?",Difícil,"SELECT uf.nm_uf, ROUND(MAX(ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6)::numeric, 2) AS max_inter_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Sudeste' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 > 200
+GROUP BY uf.nm_uf
+ORDER BY max_inter_km2 DESC;",0
+DV0013,"Num raio de 2 km do centro de Uberlândia, qual a média de desktops para alunos por dependência administrativa?",Difícil,"SELECT e.tp_depende, ROUND(AVG(md.qt_desktop_aluno)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-48.2702, -18.9336), 4674)::geography, 2000), e.geometry::geography)
+GROUP BY e.tp_depende
+ORDER BY media DESC;",0
+DV0014,"Num raio de 6 km do centro de Salvador, qual a média de turmas da educação básica por dependência administrativa?",Difícil,"SELECT e.tp_depende, ROUND(AVG(md.qt_tur_bas)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-38.4915, -12.9618), 4674)::geography, 6000), e.geometry::geography)
+GROUP BY e.tp_depende
+ORDER BY media DESC;",0
+DV0015,"Num raio de 12 km do centro de Fortaleza, qual a média de matrículas na educação básica por dependência administrativa?",Difícil,"SELECT e.tp_depende, ROUND(AVG(md.qt_mat_bas)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-38.544, -3.7234), 4674)::geography, 12000), e.geometry::geography)
+GROUP BY e.tp_depende
+ORDER BY media DESC;",0
+DV0016,"Por estado da região Nordeste, qual a área total dos municípios com mais de 100 km²?",Difícil,"SELECT uf.nm_uf, ROUND(SUM(ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_total_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Nordeste' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 > 100
+GROUP BY uf.nm_uf
+ORDER BY area_total_km2 DESC;",0
+DV0017,"Na região Nordeste, considerando municípios com área acima de 200 km², qual a área máxima (km²) por estado?",Difícil,"SELECT uf.nm_uf, ROUND(MAX(ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_maxima_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Nordeste' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 > 200
+GROUP BY uf.nm_uf
+ORDER BY area_maxima_km2 DESC;",0
+DV0018,"Na região Sul, considerando municípios com área acima de 300 km², qual a área média (km²) por estado?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6)::numeric, 2) AS area_media_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Sul' AND ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 > 300
+GROUP BY uf.nm_uf
+ORDER BY area_media_km2 DESC;",0
+DV0019,"Qual a média de turmas da educação básica por escola, por estado, na região Sudeste?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(md.qt_tur_bas)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Sudeste'
+GROUP BY uf.nm_uf
+ORDER BY media DESC;",0
+DV0020,"Na média por escola, qual o número de turmas da educação básica em cada estado da região Nordeste?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(md.qt_tur_bas)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Nordeste'
+GROUP BY uf.nm_uf
+ORDER BY media DESC;",0
+DV0021,"Qual a média de matrículas na EJA por escola, por estado, na região Centro-Oeste?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(md.qt_mat_eja)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Centro-Oeste'
+GROUP BY uf.nm_uf
+ORDER BY media DESC;",0
+DV0022,"Na média por escola, qual o número de matrículas na EJA em cada estado da região Nordeste?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(md.qt_mat_eja)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Nordeste'
+GROUP BY uf.nm_uf
+ORDER BY media DESC;",0
+DV0023,"Na média por escola, qual o número de matrículas na educação profissional em cada estado da região Centro-Oeste?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(md.qt_mat_prof)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Centro-Oeste'
+GROUP BY uf.nm_uf
+ORDER BY media DESC;",0
+DV0024,"Qual a média de matrículas no ensino fundamental por escola, por estado, na região Sudeste?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(md.qt_mat_fund)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Sudeste'
+GROUP BY uf.nm_uf
+ORDER BY media DESC;",0
+DV0025,"Na média por escola, qual o número de matrículas no ensino médio em cada estado da região Centro-Oeste?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(md.qt_mat_med)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Centro-Oeste'
+GROUP BY uf.nm_uf
+ORDER BY media DESC;",0
+DV0026,"Na média por escola, qual o número de computadores portáteis para alunos em cada estado da região Norte?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(md.qt_comp_portatil_aluno)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Norte'
+GROUP BY uf.nm_uf
+ORDER BY media DESC;",0
+DV0027,"Qual a média de computadores portáteis para alunos por escola, por estado, na região Centro-Oeste?",Difícil,"SELECT uf.nm_uf, ROUND(AVG(md.qt_comp_portatil_aluno)::numeric, 2) AS media
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN regiao rg ON uf.cd_regia = rg.cd_regia
+WHERE rg.nm_regia = 'Centro-Oeste'
+GROUP BY uf.nm_uf
+ORDER BY media DESC;",0
+DV0028,"A até 6 km do centro de Palmas, qual a soma de turmas da educação básica por dependência administrativa?",Difícil,"SELECT e.tp_depende, SUM(md.qt_tur_bas) AS total
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-48.3442, -10.1756), 4674)::geography, 6000)
+GROUP BY e.tp_depende
+ORDER BY total DESC;",0
+DV0029,"A até 6 km do centro de Salvador, qual a soma de matrículas na EJA por dependência administrativa?",Difícil,"SELECT e.tp_depende, SUM(md.qt_mat_eja) AS total
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-38.5064, -12.9671), 4674)::geography, 6000)
+GROUP BY e.tp_depende
+ORDER BY total DESC;",0
+DV0030,"A até 15 km do centro de São Luís, qual a soma de matrículas na educação básica por dependência administrativa?",Difícil,"SELECT e.tp_depende, SUM(md.qt_mat_bas) AS total
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-44.2981, -2.536), 4674)::geography, 15000)
+GROUP BY e.tp_depende
+ORDER BY total DESC;",0
+DV0031,"A até 12 km do centro de Manaus, qual a soma de matrículas na EJA por dependência administrativa?",Difícil,"SELECT e.tp_depende, SUM(md.qt_mat_eja) AS total
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-60.0092, -3.1124), 4674)::geography, 12000)
+GROUP BY e.tp_depende
+ORDER BY total DESC;",0
+DV0032,"A até 4 km do centro de João Pessoa, qual a soma de matrículas no ensino médio por dependência administrativa?",Difícil,"SELECT e.tp_depende, SUM(md.qt_mat_med) AS total
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-34.8551, -7.1355), 4674)::geography, 4000)
+GROUP BY e.tp_depende
+ORDER BY total DESC;",0
+DV0033,"A até 6 km do centro de Maceió, qual a soma de matrículas na educação infantil por dependência administrativa?",Difícil,"SELECT e.tp_depende, SUM(md.qt_mat_inf) AS total
+FROM escola e
+JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-35.752, -9.6681), 4674)::geography, 6000)
+GROUP BY e.tp_depende
+ORDER BY total DESC;",0
+DV0034,Qual a densidade de escolas por km² em cada município de Acre?,Difícil,"SELECT mu.nm_mun,
+       ROUND((COUNT(e.cd_entidade) / (ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6))::numeric, 4) AS escolas_por_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN escola e ON ST_Contains(mu.geometry, e.geometry)
+WHERE uf.nm_uf = 'Acre'
+GROUP BY mu.nm_mun, mu.geometry
+ORDER BY escolas_por_km2 DESC;",0
+DV0035,Qual a densidade de escolas por km² em cada município de Goiás?,Difícil,"SELECT mu.nm_mun,
+       ROUND((COUNT(e.cd_entidade) / (ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6))::numeric, 4) AS escolas_por_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN escola e ON ST_Contains(mu.geometry, e.geometry)
+WHERE uf.nm_uf = 'Goiás'
+GROUP BY mu.nm_mun, mu.geometry
+ORDER BY escolas_por_km2 DESC;",0
+DV0036,Qual a densidade de escolas por km² em cada município de Ceará?,Difícil,"SELECT mu.nm_mun,
+       ROUND((COUNT(e.cd_entidade) / (ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6))::numeric, 4) AS escolas_por_km2
+FROM municipio mu
+JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+JOIN escola e ON ST_Contains(mu.geometry, e.geometry)
+WHERE uf.nm_uf = 'Ceará'
+GROUP BY mu.nm_mun, mu.geometry
+ORDER BY escolas_por_km2 DESC;",0
+VV0001,"Em Paraíba, ordene os municípios pela distância média das escolas ao centro e compare à média estadual.",Muito Difícil,"WITH d AS (
+  SELECT mu.nm_mun,
+         AVG(ST_Distance(e.geometry::geography, ST_Centroid(mu.geometry)::geography)) AS dm
+  FROM escola e
+  JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Paraíba'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun, ROUND(dm::numeric, 2) AS dist_media_m,
+       ROUND(AVG(dm) OVER ()::numeric, 2) AS media_uf,
+       RANK() OVER (ORDER BY dm DESC) AS posicao
+FROM d
+ORDER BY dm DESC;",0
+VV0002,"Em Pernambuco, ordene os municípios pela distância média das escolas ao centro e compare à média estadual.",Muito Difícil,"WITH d AS (
+  SELECT mu.nm_mun,
+         AVG(ST_Distance(e.geometry::geography, ST_Centroid(mu.geometry)::geography)) AS dm
+  FROM escola e
+  JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Pernambuco'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun, ROUND(dm::numeric, 2) AS dist_media_m,
+       ROUND(AVG(dm) OVER ()::numeric, 2) AS media_uf,
+       RANK() OVER (ORDER BY dm DESC) AS posicao
+FROM d
+ORDER BY dm DESC;",0
+VV0003,"Em Ceará, ordene os municípios pela distância média das escolas ao centro e compare à média estadual.",Muito Difícil,"WITH d AS (
+  SELECT mu.nm_mun,
+         AVG(ST_Distance(e.geometry::geography, ST_Centroid(mu.geometry)::geography)) AS dm
+  FROM escola e
+  JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Ceará'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun, ROUND(dm::numeric, 2) AS dist_media_m,
+       ROUND(AVG(dm) OVER ()::numeric, 2) AS media_uf,
+       RANK() OVER (ORDER BY dm DESC) AS posicao
+FROM d
+ORDER BY dm DESC;",0
+VV0004,"Em Porto Alegre, ordene as escolas pela distância até o CREAS mais próximo e marque as 10% mais distantes.",Muito Difícil,"WITH dist AS (
+  SELECT e.cd_entidade,
+         MIN(ST_Distance(e.geometry::geography, cr.geometry::geography)) AS dist_m
+  FROM escola e
+  JOIN creas cr ON cr.nm_mun = 'Porto Alegre'
+  JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+  WHERE mu.nm_mun = 'Porto Alegre'
+  GROUP BY e.cd_entidade
+)
+SELECT cd_entidade,
+       ROUND(dist_m::numeric, 2) AS dist_m,
+       NTILE(10) OVER (ORDER BY dist_m DESC) AS decil,
+       CASE WHEN NTILE(10) OVER (ORDER BY dist_m DESC) = 1 THEN 'mais distante' ELSE 'demais' END AS faixa
+FROM dist
+ORDER BY dist_m DESC;",0
+VV0005,"Em Natal, ordene as escolas pela distância até o CREAS mais próximo e marque as 10% mais distantes.",Muito Difícil,"WITH dist AS (
+  SELECT e.cd_entidade,
+         MIN(ST_Distance(e.geometry::geography, cr.geometry::geography)) AS dist_m
+  FROM escola e
+  JOIN creas cr ON cr.nm_mun = 'Natal'
+  JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+  WHERE mu.nm_mun = 'Natal'
+  GROUP BY e.cd_entidade
+)
+SELECT cd_entidade,
+       ROUND(dist_m::numeric, 2) AS dist_m,
+       NTILE(10) OVER (ORDER BY dist_m DESC) AS decil,
+       CASE WHEN NTILE(10) OVER (ORDER BY dist_m DESC) = 1 THEN 'mais distante' ELSE 'demais' END AS faixa
+FROM dist
+ORDER BY dist_m DESC;",0
+VV0006,"Em Belém, ordene as escolas pela distância até o CREAS mais próximo e marque as 10% mais distantes.",Muito Difícil,"WITH dist AS (
+  SELECT e.cd_entidade,
+         MIN(ST_Distance(e.geometry::geography, cr.geometry::geography)) AS dist_m
+  FROM escola e
+  JOIN creas cr ON cr.nm_mun = 'Belém'
+  JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+  WHERE mu.nm_mun = 'Belém'
+  GROUP BY e.cd_entidade
+)
+SELECT cd_entidade,
+       ROUND(dist_m::numeric, 2) AS dist_m,
+       NTILE(10) OVER (ORDER BY dist_m DESC) AS decil,
+       CASE WHEN NTILE(10) OVER (ORDER BY dist_m DESC) = 1 THEN 'mais distante' ELSE 'demais' END AS faixa
+FROM dist
+ORDER BY dist_m DESC;",0
+VV0007,"Para cada CREAS de Recife, quantas escolas há num raio de 15 km e como isso se compara à média?",Muito Difícil,"WITH cob AS (
+  SELECT cr.nu_identif,
+         COUNT(DISTINCT e.cd_entidade) AS n
+  FROM creas cr
+  JOIN escola e ON ST_DWithin(cr.geometry::geography, e.geometry::geography, 15000)
+  WHERE cr.nm_mun = 'Recife'
+  GROUP BY cr.nu_identif
+)
+SELECT nu_identif, n,
+       ROUND(AVG(n) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY n DESC) AS posicao
+FROM cob
+ORDER BY n DESC;",0
+VV0008,"Para cada CREAS de Aracaju, quantas escolas há num raio de 15 km e como isso se compara à média?",Muito Difícil,"WITH cob AS (
+  SELECT cr.nu_identif,
+         COUNT(DISTINCT e.cd_entidade) AS n
+  FROM creas cr
+  JOIN escola e ON ST_DWithin(cr.geometry::geography, e.geometry::geography, 15000)
+  WHERE cr.nm_mun = 'Aracaju'
+  GROUP BY cr.nu_identif
+)
+SELECT nu_identif, n,
+       ROUND(AVG(n) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY n DESC) AS posicao
+FROM cob
+ORDER BY n DESC;",0
+VV0009,"Para cada CRAS de Aracaju, quantas escolas há num raio de 4 km e como isso se compara à média?",Muito Difícil,"WITH cob AS (
+  SELECT c.nu_identif,
+         COUNT(DISTINCT e.cd_entidade) AS n
+  FROM cras c
+  JOIN escola e ON ST_DWithin(c.geometry::geography, e.geometry::geography, 4000)
+  WHERE c.nm_mun = 'Aracaju'
+  GROUP BY c.nu_identif
+)
+SELECT nu_identif, n,
+       ROUND(AVG(n) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY n DESC) AS posicao
+FROM cob
+ORDER BY n DESC;",0
+VV0010,"Em Amapá, ordene os municípios pela área da região central e compare à média estadual.",Muito Difícil,"WITH it AS (
+  SELECT mu.nm_mun, ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6 AS area_inter
+  FROM municipio mu
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Amapá'
+)
+SELECT nm_mun, ROUND(area_inter::numeric, 2) AS area_inter_km2,
+       ROUND(AVG(area_inter) OVER ()::numeric, 2) AS media_uf,
+       RANK() OVER (ORDER BY area_inter DESC) AS posicao
+FROM it
+ORDER BY area_inter DESC;",0
+VV0011,"Em Goiás, ordene os municípios pela área da região central e compare à média estadual.",Muito Difícil,"WITH it AS (
+  SELECT mu.nm_mun, ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6 AS area_inter
+  FROM municipio mu
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Goiás'
+)
+SELECT nm_mun, ROUND(area_inter::numeric, 2) AS area_inter_km2,
+       ROUND(AVG(area_inter) OVER ()::numeric, 2) AS media_uf,
+       RANK() OVER (ORDER BY area_inter DESC) AS posicao
+FROM it
+ORDER BY area_inter DESC;",0
+VV0012,"Em Rondônia, ordene os municípios pela área da região central e compare à média estadual.",Muito Difícil,"WITH it AS (
+  SELECT mu.nm_mun, ST_Area(ST_Transform(ST_Intersection(mu.geometry, ST_Buffer(ST_Centroid(mu.geometry), 0.1)), 5880)) / 1e6 AS area_inter
+  FROM municipio mu
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Rondônia'
+)
+SELECT nm_mun, ROUND(area_inter::numeric, 2) AS area_inter_km2,
+       ROUND(AVG(area_inter) OVER ()::numeric, 2) AS media_uf,
+       RANK() OVER (ORDER BY area_inter DESC) AS posicao
+FROM it
+ORDER BY area_inter DESC;",0
+VV0013,"Num raio de 5 km do centro de Vitória, ordene as escolas por salas de aula utilizadas e marque as acima da média.",Muito Difícil,"WITH dentro AS (
+  SELECT e.cd_entidade, md.qt_salas_utilizadas AS valor
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  WHERE ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-40.3368, -20.3081), 4674)::geography, 5000), e.geometry::geography)
+)
+SELECT cd_entidade, valor,
+       ROUND(AVG(valor) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY valor DESC) AS posicao,
+       CASE WHEN valor > AVG(valor) OVER () THEN 'acima' ELSE 'abaixo' END AS faixa
+FROM dentro
+ORDER BY valor DESC;",0
+VV0014,"Num raio de 5 km do centro de São Paulo, ordene as escolas por matrículas na educação profissional e marque as acima da média.",Muito Difícil,"WITH dentro AS (
+  SELECT e.cd_entidade, md.qt_mat_prof AS valor
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  WHERE ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-46.6309, -23.5562), 4674)::geography, 5000), e.geometry::geography)
+)
+SELECT cd_entidade, valor,
+       ROUND(AVG(valor) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY valor DESC) AS posicao,
+       CASE WHEN valor > AVG(valor) OVER () THEN 'acima' ELSE 'abaixo' END AS faixa
+FROM dentro
+ORDER BY valor DESC;",0
+VV0015,"Num raio de 20 km do centro de Rio de Janeiro, ordene as escolas por matrículas na educação profissional e marque as acima da média.",Muito Difícil,"WITH dentro AS (
+  SELECT e.cd_entidade, md.qt_mat_prof AS valor
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  WHERE ST_Intersects(ST_Buffer(ST_SetSRID(ST_MakePoint(-43.2092, -22.9087), 4674)::geography, 20000), e.geometry::geography)
+)
+SELECT cd_entidade, valor,
+       ROUND(AVG(valor) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY valor DESC) AS posicao,
+       CASE WHEN valor > AVG(valor) OVER () THEN 'acima' ELSE 'abaixo' END AS faixa
+FROM dentro
+ORDER BY valor DESC;",0
+VV0016,"Em Paraíba, ordene os municípios por área (km²) do maior para o menor e marque os 25% maiores.",Muito Difícil,"WITH a AS (
+  SELECT mu.nm_mun, ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 AS area_km2
+  FROM municipio mu
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Paraíba'
+)
+SELECT nm_mun, ROUND(area_km2::numeric, 2) AS area_km2,
+       NTILE(4) OVER (ORDER BY area_km2 DESC) AS quartil,
+       CASE WHEN NTILE(4) OVER (ORDER BY area_km2 DESC) = 1 THEN 'maiores' ELSE 'demais' END AS faixa
+FROM a
+ORDER BY area_km2 DESC;",0
+VV0017,"Em Pará, ordene os municípios por área (km²) do maior para o menor e marque os 25% maiores.",Muito Difícil,"WITH a AS (
+  SELECT mu.nm_mun, ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 AS area_km2
+  FROM municipio mu
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Pará'
+)
+SELECT nm_mun, ROUND(area_km2::numeric, 2) AS area_km2,
+       NTILE(4) OVER (ORDER BY area_km2 DESC) AS quartil,
+       CASE WHEN NTILE(4) OVER (ORDER BY area_km2 DESC) = 1 THEN 'maiores' ELSE 'demais' END AS faixa
+FROM a
+ORDER BY area_km2 DESC;",0
+VV0018,"Em Piauí, ordene os municípios por área (km²) do maior para o menor e marque os 25% maiores.",Muito Difícil,"WITH a AS (
+  SELECT mu.nm_mun, ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6 AS area_km2
+  FROM municipio mu
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Piauí'
+)
+SELECT nm_mun, ROUND(area_km2::numeric, 2) AS area_km2,
+       NTILE(4) OVER (ORDER BY area_km2 DESC) AS quartil,
+       CASE WHEN NTILE(4) OVER (ORDER BY area_km2 DESC) = 1 THEN 'maiores' ELSE 'demais' END AS faixa
+FROM a
+ORDER BY area_km2 DESC;",0
+VV0019,"Para cada município de Paraná, qual a proporção de escolas com quadra de esportes e como ela se compara à média do estado?",Muito Difícil,"WITH base AS (
+  SELECT mu.nm_mun,
+         COUNT(*) FILTER (WHERE md.in_quadra_esportes = 1) AS com,
+         COUNT(*) AS total
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Paraná'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun,
+       ROUND((100.0 * com / NULLIF(total, 0))::numeric, 2) AS pct,
+       ROUND(AVG(100.0 * com / NULLIF(total, 0)) OVER ()::numeric, 2) AS media_uf,
+       CASE WHEN 100.0 * com / NULLIF(total, 0) > AVG(100.0 * com / NULLIF(total, 0)) OVER ()
+            THEN 'acima' ELSE 'abaixo' END AS situacao
+FROM base
+ORDER BY pct DESC;",0
+VV0020,"Para cada município de Paraná, qual a proporção de escolas com parque infantil e como ela se compara à média do estado?",Muito Difícil,"WITH base AS (
+  SELECT mu.nm_mun,
+         COUNT(*) FILTER (WHERE md.in_parque_infantil = 1) AS com,
+         COUNT(*) AS total
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Paraná'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun,
+       ROUND((100.0 * com / NULLIF(total, 0))::numeric, 2) AS pct,
+       ROUND(AVG(100.0 * com / NULLIF(total, 0)) OVER ()::numeric, 2) AS media_uf,
+       CASE WHEN 100.0 * com / NULLIF(total, 0) > AVG(100.0 * com / NULLIF(total, 0)) OVER ()
+            THEN 'acima' ELSE 'abaixo' END AS situacao
+FROM base
+ORDER BY pct DESC;",0
+VV0021,Classifique os municípios de Pernambuco pela proporção de escolas com internet em relação à média estadual.,Muito Difícil,"WITH base AS (
+  SELECT mu.nm_mun,
+         COUNT(*) FILTER (WHERE md.in_internet = 1) AS com,
+         COUNT(*) AS total
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  JOIN municipio mu ON ST_Contains(mu.geometry, e.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Pernambuco'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun,
+       ROUND((100.0 * com / NULLIF(total, 0))::numeric, 2) AS pct,
+       ROUND(AVG(100.0 * com / NULLIF(total, 0)) OVER ()::numeric, 2) AS media_uf,
+       CASE WHEN 100.0 * com / NULLIF(total, 0) > AVG(100.0 * com / NULLIF(total, 0)) OVER ()
+            THEN 'acima' ELSE 'abaixo' END AS situacao
+FROM base
+ORDER BY pct DESC;",0
+VV0022,"Para cada município de Tocantins, qual a proporção de escolas com quadra de esportes coberta e como ela se compara à média do estado?",Muito Difícil,"WITH base AS (
+  SELECT mu.nm_mun,
+         COUNT(*) FILTER (WHERE md.in_quadra_esportes_coberta = 1) AS com,
+         COUNT(*) AS total
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Tocantins'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun,
+       ROUND((100.0 * com / NULLIF(total, 0))::numeric, 2) AS pct,
+       ROUND(AVG(100.0 * com / NULLIF(total, 0)) OVER ()::numeric, 2) AS media_uf,
+       CASE WHEN 100.0 * com / NULLIF(total, 0) > AVG(100.0 * com / NULLIF(total, 0)) OVER ()
+            THEN 'acima' ELSE 'abaixo' END AS situacao
+FROM base
+ORDER BY pct DESC;",0
+VV0023,"Para cada município de São Paulo, qual a proporção de escolas com internet e como ela se compara à média do estado?",Muito Difícil,"WITH base AS (
+  SELECT mu.nm_mun,
+         COUNT(*) FILTER (WHERE md.in_internet = 1) AS com,
+         COUNT(*) AS total
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'São Paulo'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun,
+       ROUND((100.0 * com / NULLIF(total, 0))::numeric, 2) AS pct,
+       ROUND(AVG(100.0 * com / NULLIF(total, 0)) OVER ()::numeric, 2) AS media_uf,
+       CASE WHEN 100.0 * com / NULLIF(total, 0) > AVG(100.0 * com / NULLIF(total, 0)) OVER ()
+            THEN 'acima' ELSE 'abaixo' END AS situacao
+FROM base
+ORDER BY pct DESC;",0
+VV0024,Classifique os municípios de Bahia pela proporção de escolas com quadra de esportes em relação à média estadual.,Muito Difícil,"WITH base AS (
+  SELECT mu.nm_mun,
+         COUNT(*) FILTER (WHERE md.in_quadra_esportes = 1) AS com,
+         COUNT(*) AS total
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  JOIN municipio mu ON ST_Intersects(mu.geometry, e.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Bahia'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun,
+       ROUND((100.0 * com / NULLIF(total, 0))::numeric, 2) AS pct,
+       ROUND(AVG(100.0 * com / NULLIF(total, 0)) OVER ()::numeric, 2) AS media_uf,
+       CASE WHEN 100.0 * com / NULLIF(total, 0) > AVG(100.0 * com / NULLIF(total, 0)) OVER ()
+            THEN 'acima' ELSE 'abaixo' END AS situacao
+FROM base
+ORDER BY pct DESC;",0
+VV0025,"Para cada município de Piauí, qual a proporção de escolas com laboratório de educação profissional e como ela se compara à média do estado?",Muito Difícil,"WITH base AS (
+  SELECT mu.nm_mun,
+         COUNT(*) FILTER (WHERE md.in_laboratorio_educ_prof = 1) AS com,
+         COUNT(*) AS total
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Piauí'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun,
+       ROUND((100.0 * com / NULLIF(total, 0))::numeric, 2) AS pct,
+       ROUND(AVG(100.0 * com / NULLIF(total, 0)) OVER ()::numeric, 2) AS media_uf,
+       CASE WHEN 100.0 * com / NULLIF(total, 0) > AVG(100.0 * com / NULLIF(total, 0)) OVER ()
+            THEN 'acima' ELSE 'abaixo' END AS situacao
+FROM base
+ORDER BY pct DESC;",0
+VV0026,"Para cada município de Alagoas, qual a proporção de escolas com biblioteca e como ela se compara à média do estado?",Muito Difícil,"WITH base AS (
+  SELECT mu.nm_mun,
+         COUNT(*) FILTER (WHERE md.in_biblioteca = 1) AS com,
+         COUNT(*) AS total
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Alagoas'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun,
+       ROUND((100.0 * com / NULLIF(total, 0))::numeric, 2) AS pct,
+       ROUND(AVG(100.0 * com / NULLIF(total, 0)) OVER ()::numeric, 2) AS media_uf,
+       CASE WHEN 100.0 * com / NULLIF(total, 0) > AVG(100.0 * com / NULLIF(total, 0)) OVER ()
+            THEN 'acima' ELSE 'abaixo' END AS situacao
+FROM base
+ORDER BY pct DESC;",0
+VV0027,Classifique os municípios de Santa Catarina pela proporção de escolas com parque infantil em relação à média estadual.,Muito Difícil,"WITH base AS (
+  SELECT mu.nm_mun,
+         COUNT(*) FILTER (WHERE md.in_parque_infantil = 1) AS com,
+         COUNT(*) AS total
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  JOIN municipio mu ON ST_Within(e.geometry, mu.geometry)
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  WHERE uf.nm_uf = 'Santa Catarina'
+  GROUP BY mu.nm_mun
+)
+SELECT nm_mun,
+       ROUND((100.0 * com / NULLIF(total, 0))::numeric, 2) AS pct,
+       ROUND(AVG(100.0 * com / NULLIF(total, 0)) OVER ()::numeric, 2) AS media_uf,
+       CASE WHEN 100.0 * com / NULLIF(total, 0) > AVG(100.0 * com / NULLIF(total, 0)) OVER ()
+            THEN 'acima' ELSE 'abaixo' END AS situacao
+FROM base
+ORDER BY pct DESC;",0
+VV0028,"A até 12 km do centro de Vitória, ordene as escolas por matrículas na educação profissional e marque as acima da média local.",Muito Difícil,"WITH proximas AS (
+  SELECT e.cd_entidade, md.qt_mat_prof AS valor
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-40.3579, -20.3119), 4674)::geography, 12000)
+)
+SELECT cd_entidade, valor,
+       ROUND(AVG(valor) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY valor DESC) AS posicao,
+       CASE WHEN valor > AVG(valor) OVER () THEN 'acima' ELSE 'abaixo' END AS faixa
+FROM proximas
+ORDER BY valor DESC;",0
+VV0029,"A até 4 km do centro de Aracaju, ordene as escolas por turmas da educação básica e marque as acima da média local.",Muito Difícil,"WITH proximas AS (
+  SELECT e.cd_entidade, md.qt_tur_bas AS valor
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-37.0656, -10.9044), 4674)::geography, 4000)
+)
+SELECT cd_entidade, valor,
+       ROUND(AVG(valor) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY valor DESC) AS posicao,
+       CASE WHEN valor > AVG(valor) OVER () THEN 'acima' ELSE 'abaixo' END AS faixa
+FROM proximas
+ORDER BY valor DESC;",0
+VV0030,"A até 6 km do centro de Fortaleza, ordene as escolas por matrículas na EJA e marque as acima da média local.",Muito Difícil,"WITH proximas AS (
+  SELECT e.cd_entidade, md.qt_mat_eja AS valor
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-38.5495, -3.7307), 4674)::geography, 6000)
+)
+SELECT cd_entidade, valor,
+       ROUND(AVG(valor) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY valor DESC) AS posicao,
+       CASE WHEN valor > AVG(valor) OVER () THEN 'acima' ELSE 'abaixo' END AS faixa
+FROM proximas
+ORDER BY valor DESC;",0
+VV0031,"A até 2 km do centro de Porto Alegre, ordene as escolas por desktops para alunos e marque as acima da média local.",Muito Difícil,"WITH proximas AS (
+  SELECT e.cd_entidade, md.qt_desktop_aluno AS valor
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-51.2498, -30.0174), 4674)::geography, 2000)
+)
+SELECT cd_entidade, valor,
+       ROUND(AVG(valor) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY valor DESC) AS posicao,
+       CASE WHEN valor > AVG(valor) OVER () THEN 'acima' ELSE 'abaixo' END AS faixa
+FROM proximas
+ORDER BY valor DESC;",0
+VV0032,"A até 2 km do centro de São Paulo, ordene as escolas por turmas da educação básica e marque as acima da média local.",Muito Difícil,"WITH proximas AS (
+  SELECT e.cd_entidade, md.qt_tur_bas AS valor
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-46.6467, -23.5467), 4674)::geography, 2000)
+)
+SELECT cd_entidade, valor,
+       ROUND(AVG(valor) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY valor DESC) AS posicao,
+       CASE WHEN valor > AVG(valor) OVER () THEN 'acima' ELSE 'abaixo' END AS faixa
+FROM proximas
+ORDER BY valor DESC;",0
+VV0033,"A até 20 km do centro de Contagem, ordene as escolas por computadores portáteis para alunos e marque as acima da média local.",Muito Difícil,"WITH proximas AS (
+  SELECT e.cd_entidade, md.qt_comp_portatil_aluno AS valor
+  FROM escola e
+  JOIN microdados_ed_basica md ON e.cd_entidade = md.cd_entidade
+  WHERE ST_DWithin(e.geometry::geography, ST_SetSRID(ST_MakePoint(-44.0357, -19.9255), 4674)::geography, 20000)
+)
+SELECT cd_entidade, valor,
+       ROUND(AVG(valor) OVER ()::numeric, 2) AS media,
+       RANK() OVER (ORDER BY valor DESC) AS posicao,
+       CASE WHEN valor > AVG(valor) OVER () THEN 'acima' ELSE 'abaixo' END AS faixa
+FROM proximas
+ORDER BY valor DESC;",0
+VV0034,"Em São Paulo, ordene os municípios por densidade de escolas por km² e compare com a média estadual.",Muito Difícil,"WITH dens AS (
+  SELECT mu.nm_mun,
+         COUNT(e.cd_entidade) / (ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6) AS d
+  FROM municipio mu
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  JOIN escola e ON ST_Contains(mu.geometry, e.geometry)
+  WHERE uf.nm_uf = 'São Paulo'
+  GROUP BY mu.nm_mun, mu.geometry
+)
+SELECT nm_mun, ROUND(d::numeric, 4) AS densidade,
+       ROUND(AVG(d) OVER ()::numeric, 4) AS media_uf,
+       RANK() OVER (ORDER BY d DESC) AS posicao
+FROM dens
+ORDER BY d DESC;",0
+VV0035,"Em Paraná, ordene os municípios por densidade de escolas por km² e compare com a média estadual.",Muito Difícil,"WITH dens AS (
+  SELECT mu.nm_mun,
+         COUNT(e.cd_entidade) / (ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6) AS d
+  FROM municipio mu
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  JOIN escola e ON ST_Contains(mu.geometry, e.geometry)
+  WHERE uf.nm_uf = 'Paraná'
+  GROUP BY mu.nm_mun, mu.geometry
+)
+SELECT nm_mun, ROUND(d::numeric, 4) AS densidade,
+       ROUND(AVG(d) OVER ()::numeric, 4) AS media_uf,
+       RANK() OVER (ORDER BY d DESC) AS posicao
+FROM dens
+ORDER BY d DESC;",0
+VV0036,"Em Piauí, ordene os municípios por densidade de escolas por km² e compare com a média estadual.",Muito Difícil,"WITH dens AS (
+  SELECT mu.nm_mun,
+         COUNT(e.cd_entidade) / (ST_Area(ST_Transform(mu.geometry, 5880)) / 1e6) AS d
+  FROM municipio mu
+  JOIN unidade_federativa uf ON mu.cd_uf = uf.cd_uf
+  JOIN escola e ON ST_Contains(mu.geometry, e.geometry)
+  WHERE uf.nm_uf = 'Piauí'
+  GROUP BY mu.nm_mun, mu.geometry
+)
+SELECT nm_mun, ROUND(d::numeric, 4) AS densidade,
+       ROUND(AVG(d) OVER ()::numeric, 4) AS media_uf,
+       RANK() OVER (ORDER BY d DESC) AS posicao
+FROM dens
+ORDER BY d DESC;",0

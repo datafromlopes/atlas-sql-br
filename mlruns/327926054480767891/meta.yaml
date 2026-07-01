@@ -1,8 +1,0 @@
-artifact_location: file:///Users/diegolopes/repositories/atlas-sql-br/mlruns/327926054480767891
-creation_time: 1779585297444
-experiment_id: '327926054480767891'
-last_update_time: 1779585297444
-lifecycle_stage: active
-name: geo-nlq-to-sql
-trace_location: null
-workspace: default

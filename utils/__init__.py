@@ -12,41 +12,24 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-from .utils import GeoDataset, TfIdfVectorizer, Logger
+from .utils import GeoDataset, Logger
 
 from .global_variables import (
     PROJECT_NAME,
     PROJECT_PATH,
-    DATASET_TYPE,
-    DATASET_FULL_NAME,
-    TF_IDF_MATRIX_NAME,
-    TF_IDF_FEATURES_NAME,
-    TRANSLATOR_MODEL,
-    UNMASKER_MODEL,
-    NLP_VOCAB,
-    NLP_LANGUAGE,
-    SRC_LANG,
-    TGT_LANG,
-    INPUT_FILE,
-    OUTPUT_FILE
+    DATASET_NAME,
+    PREDS_DIR,
+    DATASET_PATH,
+    DATASET_VALIDATION_NAME
 )
 
 __all__ = [
     'GeoDataset',
-    'TfIdfVectorizer',
     'Logger',
-    'PROJECT_NAME',
+    'PROJECT_NAME', 
     'PROJECT_PATH',
-    'DATASET_TYPE',
-    'DATASET_FULL_NAME',
-    'TF_IDF_MATRIX_NAME',
-    'TF_IDF_FEATURES_NAME',
-    'TRANSLATOR_MODEL',
-    'UNMASKER_MODEL',
-    'NLP_VOCAB',
-    'NLP_LANGUAGE',
-    'SRC_LANG',
-    'TGT_LANG',
-    'INPUT_FILE',
-    'OUTPUT_FILE'
+    'DATASET_NAME',
+    'PREDS_DIR',
+    'DATASET_PATH',
+    'DATASET_VALIDATION_NAME'
 ]
