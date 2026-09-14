@@ -2,7 +2,7 @@
 
 **A Brazilian Portuguese Geospatial Text-to-SQL Dataset with Spatial Hierarchies**
 
-![AtlasSQL-BR](docs/banner.png)
+![AtlasSQL-BR](atlas-sql-br-banner.png)
 
 [![Paper](https://img.shields.io/badge/Paper-SBBD%202026-1e3a8a)](https://doi.org/10.5753/sbbd.2026.249149)
 [![Dataset](https://img.shields.io/badge/🤗%20Dataset-atlas--sql--br-yellow)](https://huggingface.co/datasets/datafromlopes/atlas-sql-br)
