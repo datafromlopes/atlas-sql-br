@@ -1,0 +1,71 @@
+# =============================================================================
+# exp-v6 — reproduction of the experiment reported in the SBBD 2026 paper
+# "AtlasSQL-BR: A Brazilian Portuguese Geospatial Text-to-SQL Dataset with
+# Spatial Hierarchies" (Section 4.2, LoRA Configuration and Training Protocol),
+# run on the local Apple Silicon workstation (M5 Pro, 48 GB unified memory).
+#
+# Every value is either stated in the paper or is the Hugging Face Trainer
+# default the paper's protocol implies. Deviations forced by the hardware are
+# marked [mac]:
+#   - optim: adamw_torch instead of adamw_bnb_8bit (bitsandbytes is CUDA-only;
+#     with LoRA the optimizer state is < 0.5 % of the parameters, so the 8-bit
+#     variant was only a memory saving on the A6000).
+#   - tf32: False (TF32 does not exist on Apple Silicon; weights are bf16).
+#   - dataloader workers / pin_memory: not applicable with unified memory.
+# =============================================================================
+model_name: Llama-3.1-8B-Instruct
+base_model: meta-llama/Llama-3.1-8B-Instruct
+architecture: llama
+train_method: lora
+
+# ── Data: the 980 curated pairs split 784/196 as described in the paper ─────
+dataset_version: paper_split        # data/paper_split/{train,validation}.parquet
+                                    # (784/196, stratified by tier, function and division)
+eval_on_holdout: True               # validation loss (checkpoint selection) is
+                                    # measured on the 196-pair validation split
+eval_on_start: True                 # log the base model's validation loss at step 0
+seed: 42
+
+# ── Prompt (identical in training and generation; no schema injection) ──────
+prompt_template: "Traduza para SQL: {question}"
+max_length: 1024                    # not stated in the paper; covers the longest pair
+
+# ── LoRA ─────────────────────────────────────────────────────────────────────
+lora_r: 8
+lora_alpha: 32
+lora_dropout: 0.1
+lora_target_modules: [q_proj, v_proj]
+
+# ── Optimization ─────────────────────────────────────────────────────────────
+epochs: 10
+batch_size: 2
+grad_accum: 2                       # effective batch 4
+learning_rate: 0.00005              # Trainer default (paper does not override it)
+lr_scheduler_type: linear           # Trainer default
+warmup_steps: 612
+weight_decay: 0.01
+optim: adamw_torch                  # [mac] paper: adamw_bnb_8bit
+early_stopping_patience: 0          # 0 = disabled: run the 10 epochs, keep the best
+early_stopping_threshold: 0.0
+gradient_checkpoints: True
+fp16: False
+bf16: True                          # weights in bf16 (MPS); Trainer autocast on CUDA
+tf32: False                         # [mac] paper: True
+dataloader_num_workers: 0           # [mac]
+dataloader_pin_memory: False        # [mac]
+logging_steps: 25
+logging_strategy: steps
+evaluation_strategy: epoch
+save_strategy: epoch
+load_best_model: True               # best checkpoint = minimum validation loss
+metric_for_best_model: eval_loss
+greater_is_better: False
+
+# ── Generation (validation split, 196 records) ──────────────────────────────
+gen_max_new_tokens: 512
+gen_batch_size: 4
+
+# ── Hugging Face Hub (left for later; the code is in place) ─────────────────
+hf_push: False
+hf_repo_id: datafromlopes/llama-3.1-8b-atlassql-br
+hf_private: False

@@ -65,11 +65,18 @@ root_dir = os.path.abspath(os.path.join(current_dir, ".."))
 if root_dir not in sys.path:
     sys.path.append(root_dir)
 
-from utils import PROJECT_PATH, PROJECT_NAME, DATASET_PATH, DATASET_NAME  # noqa: E402
+from utils import PROJECT_PATH, PROJECT_NAME  # noqa: E402
 from utils.utils import Logger  # noqa: E402
+from utils.experiment import (  # noqa: E402
+    Q_COL, SQL_COL, LEVEL_COL, TRAIN_COL,
+    load_experiment_config, experiment_dir, build_prompt, prompt_template,
+    load_train_pool, load_holdout, dataset_files, dataset_version, file_md5,
+    build_mlflow_uri as _shared_mlflow_uri, save_run_id,
+)
 
-# Dataset column names.
-Q_COL, SQL_COL, LEVEL_COL, TRAIN_COL = "question", "sql_code", "level", "train"
+# The experiment config of the current run (set in main; read by the prompt
+# builder so training and generation share one template).
+CFG: dict = {}
 
 # =============================================================================
 # LOGGING
@@ -110,18 +117,8 @@ def resolve_precision(fp16: bool, bf16: bool, tf32: bool):
 # MLFLOW HELPERS
 # =============================================================================
 def build_mlflow_uri() -> str:
-    """MLflow URI with local fallback and PASSWORD redacted in the log."""
-    pg_user = os.environ.get("PG_USER")
-    pg_pass_raw = os.environ.get("PG_PASS", "")
-    if pg_user and pg_pass_raw:
-        uri = f"postgresql://{pg_user}:{quote_plus(pg_pass_raw)}@localhost:5432/mlflow"
-        redacted = uri.replace(quote_plus(pg_pass_raw), "****")
-    else:
-        uri = f"file://{PROJECT_PATH}/mlruns"
-        redacted = uri
-        logger.warning("PG_USER/PG_PASS not set — using local MLflow at ./mlruns")
-    logger.info(f"MLflow tracking URI: {redacted}")
-    return uri
+    """MLFLOW_TRACKING_URI > Postgres (PG_USER/PG_PASS) > file store ./mlruns."""
+    return _shared_mlflow_uri(logger)
 
 
 def get_git_info() -> dict:
@@ -199,10 +196,11 @@ def mlflow_end_run(status="FINISHED"):
 # DATASETS
 # =============================================================================
 def _build_prompt(q: str) -> str:
-    # Single prompt format, identical in training and generation (and it must
-    # match generate_sql_preds.py). Ends with "SQL:" so a decoder-only model
-    # knows the continuation is the query.
-    return f"Pergunta: {q}\nSQL:"
+    # Single prompt format, identical in training and generation: both stages
+    # call utils.experiment.build_prompt with the experiment's `prompt_template`
+    # (default "Pergunta: {question}\nSQL:"; the paper uses
+    # "Traduza para SQL: {question}"). No schema is injected.
+    return build_prompt(CFG, q)
 
 
 class CausalDataset(torch.utils.data.Dataset):
@@ -278,9 +276,13 @@ def load_tokenizer(base_model_name: str):
     return tok
 
 
-def _peft_targets():
-    """target_modules for decoder-only (Llama / Qwen)."""
-    return {"lora": ["q_proj", "k_proj", "v_proj", "o_proj"],
+def _peft_targets(cfg: dict | None = None):
+    """target_modules for decoder-only (Llama / Qwen). `lora_target_modules` in
+    the experiment YAML overrides the LoRA default (the paper uses q_proj and
+    v_proj only)."""
+    cfg = cfg or {}
+    lora = list(cfg.get("lora_target_modules") or ["q_proj", "k_proj", "v_proj", "o_proj"])
+    return {"lora": lora,
             "ia3": ["k_proj", "v_proj", "down_proj"], "ia3_ff": ["down_proj"]}
 
 
@@ -291,7 +293,7 @@ def build_model(base_model_name: str, train_method: str, cfg: dict, dtype):
             f"{base_model_name} is encoder-decoder; this pipeline supports only "
             f"decoder-only models (Llama / Qwen).")
     ModelCls = AutoModelForCausalLM
-    tgt = _peft_targets()
+    tgt = _peft_targets(cfg)
 
     if train_method == "scratch":
         # FIX (bug #2/#3): same architecture/vocab as base, random weights.
@@ -337,14 +339,17 @@ def train_model(model, train_ds, val_ds, tokenizer, collator, ta: dict):
         gradient_accumulation_steps=ta["grad_accum"],
         learning_rate=ta["learning_rate"],          # FIX (bug #5)
         lr_scheduler_type=ta["lr_scheduler_type"],  # FIX (bug #5)
-        warmup_ratio=ta["warmup_ratio"],
+        # warmup_steps (absolute, as in the paper: 612) takes precedence over
+        # warmup_ratio when it is set to a positive value.
+        warmup_steps=int(ta.get("warmup_steps") or 0),
+        warmup_ratio=(0.0 if int(ta.get("warmup_steps") or 0) > 0 else ta["warmup_ratio"]),
         weight_decay=ta["weight_decay"],
         logging_dir=ta["logs_dir"],
         logging_steps=ta["logging_steps"],
         logging_strategy=ta["logging_strategy"],
         eval_strategy=ta["evaluation_strategy"],
         save_strategy=ta["save_strategy"],
-        save_total_limit=2,
+        save_total_limit=None,
         fp16=ta["fp16"], bf16=ta["bf16"], tf32=ta["tf32"],
         dataloader_num_workers=ta["dataloader_num_workers"],
         dataloader_pin_memory=ta["dataloader_pin_memory"],
@@ -354,16 +359,23 @@ def train_model(model, train_ds, val_ds, tokenizer, collator, ta: dict):
         metric_for_best_model=ta["metric_for_best_model"],
         greater_is_better=ta["greater_is_better"],
         report_to="none",
+        # Evaluate before the first optimization step, so the validation loss of
+        # the untrained (base) model is logged at step 0 and the training curve
+        # can be drawn against that reference.
+        eval_on_start=bool(ta.get("eval_on_start", True)),
         disable_tqdm=False,  # keep the native tqdm progress bar
         run_name=ta["run_name"],
         seed=ta["seed"],
     )
+    callbacks = [MLflowRealtimeCallback()]
+    # early_stopping_patience <= 0 disables early stopping: the run then goes
+    # through every epoch and load_best_model_at_end keeps the best checkpoint.
+    if int(ta.get("early_stopping_patience") or 0) > 0:
+        callbacks.insert(0, EarlyStoppingCallback(int(ta["early_stopping_patience"]),
+                                                  float(ta["early_stopping_threshold"])))
     trainer = Trainer(
         model=model, args=args, train_dataset=train_ds, eval_dataset=val_ds,
-        data_collator=collator,
-        callbacks=[EarlyStoppingCallback(ta["early_stopping_patience"],
-                                         ta["early_stopping_threshold"]),
-                   MLflowRealtimeCallback()],
+        data_collator=collator, callbacks=callbacks,
     )
     logger.info(f"Active device: {next(trainer.model.parameters()).device}")
     trainer.train()
@@ -373,18 +385,57 @@ def train_model(model, train_ds, val_ds, tokenizer, collator, ta: dict):
 # CONFIG / CLI
 # =============================================================================
 def load_config(experiment_version: int):
-    path = PROJECT_PATH / "experiments" / f"exp-v{experiment_version}.yaml"
-    with open(path, "r") as f:
-        return yaml.safe_load(f), path
+    return load_experiment_config(experiment_version)
 
 
-def load_dataset() -> pl.DataFrame:
-    df = pl.scan_parquet(f"{DATASET_PATH}/{DATASET_NAME}").collect()
-    # Ensure the required columns are present.
-    missing = [c for c in (Q_COL, SQL_COL, TRAIN_COL) if c not in df.columns]
-    if missing:
-        raise KeyError(f"Missing dataset columns: {missing}. Available: {df.columns}")
-    return df
+# =============================================================================
+# HUGGING FACE HUB
+# =============================================================================
+def push_to_hub(cfg: dict, art_dir: str, run_id: str, metrics: dict, token: str) -> str | None:
+    """Upload the trained adapter (or full weights), the tokenizer and a model
+    card to the Hugging Face Hub. Returns the repository URL."""
+    from huggingface_hub import HfApi
+    repo_id = cfg.get("hf_repo_id")
+    if not cfg.get("hf_push") or not repo_id:
+        logger.info("hf_push disabled or hf_repo_id missing — skipping Hub upload.")
+        return None
+    api = HfApi(token=token)
+    api.create_repo(repo_id=repo_id, repo_type="model", private=bool(cfg.get("hf_private", False)),
+                    exist_ok=True)
+    card = f"""---
+base_model: {cfg["base_model"]}
+library_name: peft
+language: [pt]
+license: mit
+tags: [text-to-sql, geospatial, postgis, lora, brazilian-portuguese, atlas-sql-br]
+datasets: [datafromlopes/atlas-sql-br]
+---
+
+# {repo_id}
+
+{cfg.get("train_method", "").upper()} adapter of `{cfg["base_model"]}` trained on the
+curated split of [AtlasSQL-BR](https://huggingface.co/datasets/datafromlopes/atlas-sql-br)
+(Brazilian Portuguese geospatial Text-to-SQL over PostGIS).
+
+- Run id (MLflow): `{run_id}`
+- Prompt: `{prompt_template(cfg)}` (no schema injection)
+- LoRA: r={cfg.get("lora_r")}, alpha={cfg.get("lora_alpha")}, dropout={cfg.get("lora_dropout")},
+  targets={cfg.get("lora_target_modules")}
+- Training: {cfg.get("epochs")} epochs, batch {cfg.get("batch_size")} x {cfg.get("grad_accum")},
+  optim={cfg.get("optim")}, lr={cfg.get("learning_rate")}, warmup_steps={cfg.get("warmup_steps")},
+  weight_decay={cfg.get("weight_decay")}, max_length={cfg.get("max_length")}
+- Best validation loss: {metrics.get("best_eval_loss")}
+
+Training and evaluation code: https://github.com/datafromlopes/atlas-sql-br
+"""
+    card_path = os.path.join(art_dir, "README.md")
+    with open(card_path, "w", encoding="utf-8") as f:
+        f.write(card)
+    api.upload_folder(repo_id=repo_id, repo_type="model", folder_path=art_dir,
+                      commit_message=f"Upload {run_id}")
+    url = f"https://huggingface.co/{repo_id}"
+    logger.info(f"✔ Pushed to the Hugging Face Hub: {url}")
+    return url
 
 # =============================================================================
 # MAIN
@@ -395,6 +446,7 @@ def main():
     exp = parser.parse_args().experiment_version
 
     cfg, cfg_path = load_config(exp)
+    CFG.clear(); CFG.update(cfg)
     EXP = f"v{exp}"
 
     # Baseline experiments (train_method == "none") have nothing to train. The
@@ -411,9 +463,11 @@ def main():
         return
 
     token = os.environ.get("HF_TOKEN")
-    if not token:
-        raise ValueError("Set HF_TOKEN in the environment (export HF_TOKEN='...').")
-    login(token=token)
+    if token:
+        login(token=token)
+    else:
+        logger.warning("HF_TOKEN not set: gated weights must already be in the local cache; "
+                       "the Hub upload (hf_push) will be skipped.")
 
     set_seed(cfg.get("seed", 42))
 
@@ -423,7 +477,19 @@ def main():
     BASE_MODEL = cfg["base_model"]
     METHOD = cfg["train_method"]
     fp16, bf16, tf32 = resolve_precision(cfg["fp16"], cfg["bf16"], cfg["tf32"])
-    dtype = torch.float32 if IS_MPS else (torch.bfloat16 if bf16 else torch.float32)
+    # Weight dtype. On CUDA the Trainer's bf16 autocast is used; on MPS autocast
+    # is not available, so the base weights themselves are loaded in bf16 when
+    # the config asks for bf16 (PEFT keeps the trainable adapter in fp32).
+    if IS_MPS and cfg["bf16"]:
+        dtype = torch.bfloat16
+        logger.info("MPS: base weights loaded in bfloat16 (adapter parameters stay fp32).")
+    else:
+        dtype = torch.bfloat16 if bf16 else torch.float32
+    # Optimizer: the 8-bit AdamW of bitsandbytes exists only for CUDA.
+    optim = str(cfg["optim"])
+    if optim.startswith("adamw_bnb") and not IS_CUDA:
+        logger.warning(f"{optim} requires CUDA (bitsandbytes); falling back to adamw_torch.")
+        optim = "adamw_torch"
     run_id = f"{cfg['model_name']}_{METHOD}_{EXP}"
 
     git = get_git_info()
@@ -441,29 +507,47 @@ def main():
 
     mlflow_end_run()
     try:
-        # ── Data: train = train==1 (with internal val); test = train==0 ──────
-        df = load_dataset()
-        train_pool = df.filter(pl.col(TRAIN_COL) == 1)
-        test_df = df.filter(pl.col(TRAIN_COL) == 0)
-        logger.info(f"Data: {len(train_pool)} train(+val) | {len(test_df)} test (holdout)")
+        # ── Data: training pool (internal val carved below); holdout untouched ──
+        train_pool = load_train_pool(cfg)
+        test_df = load_holdout(cfg)
+        logger.info(f"Data [{dataset_version(cfg)}]: {len(train_pool)} train(+val) | "
+                    f"{len(test_df)} test (holdout)")
 
-        mlflow.start_run(run_name=run_id, tags={
+        active = mlflow.start_run(run_name=run_id, tags={
             "experiment_version": EXP, "model_name": cfg["model_name"],
             "train_method": METHOD, "architecture": cfg["architecture"],
+            "dataset_version": dataset_version(cfg), "stage": "train",
             "device": str(DEVICE), **git})
-        mlflow_log_params(get_dataset_fingerprint(df))
+        save_run_id(exp, active.info.run_id)
+        logger.info(f"MLflow run id: {active.info.run_id} (saved for the generate/evaluate stages)")
+
+        mlflow_log_params(get_dataset_fingerprint(train_pool))
+        for fpath in dataset_files(cfg):
+            mlflow.log_artifact(str(fpath), artifact_path="dataset")
+            mlflow_log_params({"dataset_md5_" + fpath.name.replace(".", "_"): file_md5(fpath)})
         mlflow.log_artifact(str(cfg_path), artifact_path="config")
         mlflow_log_params({
             "base_model": BASE_MODEL, "train_method": METHOD, "architecture": cfg["architecture"],
-            "device": str(DEVICE),
+            "device": str(DEVICE), "dataset_version": dataset_version(cfg),
+            "dataset_partition": cfg.get("dataset_partition"),
+            "prompt_template": prompt_template(cfg),
             "epochs": cfg["epochs"], "batch_size": cfg["batch_size"],
             "grad_accum": cfg["grad_accum"], "learning_rate": cfg.get("learning_rate"),
             "lr_scheduler": cfg.get("lr_scheduler_type"), "warmup_ratio": cfg.get("warmup_ratio"),
+            "warmup_steps": cfg.get("warmup_steps"), "weight_decay": cfg.get("weight_decay"),
+            "optim": cfg.get("optim"), "optim_effective": optim,
+            "gradient_checkpointing": cfg.get("gradient_checkpoints"),
+            "eval_on_holdout": bool(cfg.get("eval_on_holdout", False)),
+            "early_stopping_patience": cfg.get("early_stopping_patience"),
             "lora_r": cfg.get("lora_r"), "lora_alpha": cfg.get("lora_alpha"),
-            "lora_dropout": cfg.get("lora_dropout"), "seed": cfg.get("seed", 42),
+            "lora_dropout": cfg.get("lora_dropout"),
+            "lora_target_modules": cfg.get("lora_target_modules"), "seed": cfg.get("seed", 42),
             "fp16": fp16, "bf16": bf16, "tf32": tf32, "max_length": cfg["max_length"],
+            "val_fraction": (None if cfg.get("eval_on_holdout") else cfg.get("val_fraction", 0.1)),
             "n_train_pool": len(train_pool), "n_test_holdout": len(test_df),
             "transformers": transformers.__version__, "torch": torch.__version__,
+            "peft": __import__("peft").__version__,
+            "hf_repo_id": cfg.get("hf_repo_id"),
         })
 
         # ── Model ─────────────────────────────────────────────────────────────
@@ -477,14 +561,24 @@ def main():
         # by generate_sql_preds.py + score_predictions.py.
         if METHOD != "none":
             # ── Internal val split (does NOT touch the holdout) ───────────────
-            tr_df, vl_df = stratified_val_split(train_pool, cfg.get("val_fraction", 0.1),
-                                                cfg.get("seed", 42))
+            if cfg.get("eval_on_holdout"):
+                # Paper protocol: the validation split (196) is the eval set that
+                # drives checkpoint selection; every training pair is used.
+                tr_df, vl_df = train_pool, test_df
+                logger.info(f"Split: {len(tr_df)} train | {len(vl_df)} validation "
+                            f"(the held-out split; eval_on_holdout=True)")
+            else:
+                tr_df, vl_df = stratified_val_split(train_pool, cfg.get("val_fraction", 0.1),
+                                                    cfg.get("seed", 42))
+                logger.info(f"Split: {len(tr_df)} train | {len(vl_df)} internal val "
+                            f"(stratified by tier, seed {cfg.get('seed', 42)})")
+            mlflow_log_params({"n_train": len(tr_df), "n_val": len(vl_df)})
             DS = CausalDataset
             train_ds = DS(tr_df, tokenizer, cfg["max_length"])
             val_ds = DS(vl_df, tokenizer, cfg["max_length"])
             collator = CausalCollator(tokenizer)
 
-            out_dir = f"{PROJECT_PATH}/models/experiments/{EXP}"
+            out_dir = str(experiment_dir(exp))
             logs_dir = f"{out_dir}/logs"
             os.makedirs(logs_dir, exist_ok=True)
 
@@ -497,19 +591,21 @@ def main():
                   "grad_accum": cfg["grad_accum"], "learning_rate": cfg["learning_rate"],
                   "lr_scheduler_type": cfg.get("lr_scheduler_type", "cosine"),
                   "warmup_ratio": cfg.get("warmup_ratio", 0.06),
+                  "warmup_steps": cfg.get("warmup_steps", 0),
                   "weight_decay": cfg["weight_decay"], "logging_steps": cfg["logging_steps"],
                   "logging_strategy": cfg["logging_strategy"],
                   "evaluation_strategy": cfg["evaluation_strategy"],
                   "save_strategy": cfg["save_strategy"], "fp16": fp16, "bf16": bf16, "tf32": tf32,
                   "dataloader_num_workers": 0 if not IS_CUDA else cfg["dataloader_num_workers"],
                   "dataloader_pin_memory": False if not IS_CUDA else cfg["dataloader_pin_memory"],
-                  "optim": cfg["optim"], "gradient_checkpoints": cfg["gradient_checkpoints"],
+                  "optim": optim, "gradient_checkpoints": cfg["gradient_checkpoints"],
                   "load_best_model": cfg["load_best_model"],
                   "metric_for_best_model": cfg["metric_for_best_model"],
                   "greater_is_better": cfg["greater_is_better"],
                   "early_stopping_patience": cfg["early_stopping_patience"],
                   "early_stopping_threshold": cfg["early_stopping_threshold"],
-                  "run_name": run_id, "seed": cfg.get("seed", 42)}
+                  "run_name": run_id, "seed": cfg.get("seed", 42),
+                  "eval_on_start": cfg.get("eval_on_start", True)}
 
             logger.info("Starting training…")
             trainer = train_model(model, train_ds, val_ds, tokenizer, collator, ta)
@@ -519,8 +615,40 @@ def main():
             os.makedirs(art, exist_ok=True)
             trainer.model.save_pretrained(art)
             tokenizer.save_pretrained(art)
+
+            # Training history, trainer state and args go with the artifacts so a
+            # run can be audited without the tracking server.
+            with open(os.path.join(art, "training_metrics.json"), "w", encoding="utf-8") as f:
+                json.dump(trainer.state.log_history, f, indent=2, ensure_ascii=False)
+            trainer.state.save_to_json(os.path.join(art, "trainer_state.json"))
+            torch.save(trainer.args, os.path.join(art, "training_args.bin"))
+            with open(os.path.join(art, "experiment_config.yaml"), "w", encoding="utf-8") as f:
+                yaml.safe_dump(cfg, f, sort_keys=False, allow_unicode=True)
+
+            evals = [h for h in trainer.state.log_history if "eval_loss" in h]
+            best = min(evals, key=lambda h: h["eval_loss"]) if evals else {}
+            final_metrics = {
+                "best_eval_loss": best.get("eval_loss"),
+                "best_epoch": best.get("epoch"),
+                "best_step": best.get("step"),
+                "epochs_run": trainer.state.epoch,
+                "global_steps": trainer.state.global_step,
+            }
+            mlflow.log_metrics({k: float(v) for k, v in final_metrics.items() if v is not None})
+            mlflow_log_params({"best_checkpoint": trainer.state.best_model_checkpoint})
             mlflow.log_artifacts(art, artifact_path="model")
-            logger.info(f"✔ {run_id} complete. Artifacts at: {art}")
+            logger.info(f"✔ {run_id} complete. Artifacts at: {art} | best eval_loss="
+                        f"{final_metrics['best_eval_loss']} (epoch {final_metrics['best_epoch']})")
+
+            # ── Hugging Face Hub ─────────────────────────────────────────────
+            try:
+                url = push_to_hub(cfg, art, run_id, final_metrics, token)
+                if url:
+                    mlflow.set_tags({"hf_repo_url": url, "hf_repo_id": cfg.get("hf_repo_id")})
+            except Exception as he:
+                logger.error(f"Hub upload failed (artifacts are safe locally at {art}): {he}",
+                             exc_info=True)
+                mlflow.set_tag("hf_push_error", str(he)[:250])
 
     except KeyboardInterrupt:
         logger.warning("Interrupted by user.")

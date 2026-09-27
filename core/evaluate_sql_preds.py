@@ -58,8 +58,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 
 from sql_validation import validate_sql  # noqa: E402
-from utils import PROJECT_PATH, PREDS_DIR # noqa: E402
+from utils import PROJECT_PATH, PROJECT_NAME, PREDS_DIR # noqa: E402
 from utils.utils import Logger  # noqa: E402
+from utils.experiment import build_mlflow_uri, load_run_id  # noqa: E402
 
 logger = Logger("scoring").setup_logging()
 
@@ -150,15 +151,26 @@ def explain_ok(conn, sql: str) -> tuple[bool, str | None]:
 # ═══════════════════════════════════════════════════════════════════════════
 # Scoring of a single predictions file
 # ═══════════════════════════════════════════════════════════════════════════
-def score_file(path: Path, conn, compare_mode: str, use_db: bool) -> dict:
-    rows = json.loads(path.read_text(encoding="utf-8"))
+def score_file(path: Path, conn, compare_mode: str, use_db: bool,
+               comparable_only: bool = True) -> dict:
+    all_rows = json.loads(path.read_text(encoding="utf-8"))
+    # Paper protocol: a record enters the averages only when at least one of the
+    # two models yielded a recognizable SQL (195 of 196 in the paper).
+    if comparable_only:
+        rows = [r for r in all_rows if (r.get(BASE) or "").strip() or (r.get(FT) or "").strip()]
+    else:
+        rows = all_rows
+    n_skipped = len(all_rows) - len(rows)
     detailed = []
     total = len(rows)
 
-    # Accumulators: per model (base/finetuned), global and per level.
+    # Accumulators: per model (base/finetuned), global, per level, per division.
     agg = {m: defaultdict(list) for m, _ in PREDICTORS}
     by_level = {m: defaultdict(lambda: defaultdict(list)) for m, _ in PREDICTORS}
+    by_division = {m: defaultdict(lambda: defaultdict(list)) for m, _ in PREDICTORS}
+    per_function = {m: defaultdict(lambda: Counter()) for m, _ in PREDICTORS}
     ft_failures = Counter()
+    base_failures = Counter()
     gold_exec_fail = 0
     row_errors = 0
 
@@ -167,6 +179,7 @@ def score_file(path: Path, conn, compare_mode: str, use_db: bool) -> dict:
     for i, r in enumerate(rows, 1):
         gold = r.get(GOLD, "") or ""
         level = r.get("nivel", r.get("level", "")) or ""
+        division = r.get("divisao", r.get("territorial_division", "")) or ""
         mode = resolve_mode(gold, compare_mode)
 
         # Is the GOLD itself executable? (EXPLAIN). A non-executable gold makes the
@@ -175,7 +188,8 @@ def score_file(path: Path, conn, compare_mode: str, use_db: bool) -> dict:
         if use_db and not gold_ok:
             gold_exec_fail += 1
 
-        row_out = {"id": r.get("sql_validation_id"), "nivel": level,
+        row_out = {"id": r.get("sql_validation_id"), "nivel": level, "divisao": division,
+                   "funcao": r.get("funcao", ""),
                    "compare_mode": mode, "gold_executable": gold_ok,
                    "gold_explain_error": gold_err, "models": {}}
 
@@ -199,17 +213,32 @@ def score_file(path: Path, conn, compare_mode: str, use_db: bool) -> dict:
                 logger.warning(f"row {i} [{mname}] scoring error: {exc}")
                 full = {"summary": {"ast_equivalent": False, "execution_match": False,
                                     "component_avg_jaccard": 0.0, "string_exact": False,
-                                    "string_similarity": 0.0, "failures": ["scoring_error"]},
-                        "structural_f1": {}}
+                                    "string_similarity": 0.0, "token_f1": 0.0,
+                                    "geospatial_f1": 0.0, "spatial_exact": False,
+                                    "failures": ["scoring_error"]},
+                        "structural_f1": {}, "string": {}, "geospatial": {}}
                 sm = full["summary"]
                 pred_ok, pred_err = (False, str(exc))
 
             exec_match = sm.get("execution_match")
             ast_eq = bool(sm.get("ast_equivalent"))
             comp_j = float(sm.get("component_avg_jaccard") or 0.0)
+            if not pred.strip():
+                # An empty prediction has nothing in common with the gold query.
+                # component_matching_score() returns 1.0 when both sides have no
+                # clauses, which would reward a model that produced no SQL at all.
+                comp_j = 0.0
+                exec_match = False if exec_match is None and use_db else exec_match
             str_ex = bool(sm.get("string_exact"))
             str_sim = float(sm.get("string_similarity") or 0.0)
             sf1 = float((full.get("structural_f1") or {}).get("f1") or 0.0)
+            sp = float((full.get("structural_f1") or {}).get("precision") or 0.0)
+            sr = float((full.get("structural_f1") or {}).get("recall") or 0.0)
+            tok = (full.get("string") or {}).get("token_f1") or {}
+            geo = full.get("geospatial") or {}
+            tok_p, tok_r, tok_f = (float(tok.get(k) or 0.0) for k in ("precision", "recall", "f1"))
+            geo_p, geo_r, geo_f = (float(geo.get(k) or 0.0) for k in ("precision", "recall", "f1"))
+            geo_exact = bool(geo.get("spatial_exact"))
 
             # execution counts only when the gold is executable (valid comparison)
             if use_db and exec_match is not None and gold_ok:
@@ -223,10 +252,38 @@ def score_file(path: Path, conn, compare_mode: str, use_db: bool) -> dict:
             agg[mname]["str_exact"].append(1 if str_ex else 0)
             agg[mname]["str_sim"].append(str_sim)
             agg[mname]["sf1"].append(sf1)
-            by_level[mname][level]["ast"].append(1 if ast_eq else 0)
+            agg[mname]["sp"].append(sp); agg[mname]["sr"].append(sr)
+            agg[mname]["tok_p"].append(tok_p); agg[mname]["tok_r"].append(tok_r); agg[mname]["tok_f"].append(tok_f)
+            agg[mname]["geo_p"].append(geo_p); agg[mname]["geo_r"].append(geo_r); agg[mname]["geo_f"].append(geo_f)
+            agg[mname]["geo_exact"].append(1 if geo_exact else 0)
+            agg[mname]["geo_tp"].append(int(geo.get("tp") or 0))
+            agg[mname]["geo_fp"].append(int(geo.get("fp") or 0))
+            agg[mname]["geo_fn"].append(int(geo.get("fn") or 0))
+            for scope in (by_level[mname][level], by_division[mname][division]):
+                scope["ast"].append(1 if ast_eq else 0)
+                scope["comp"].append(comp_j); scope["str_exact"].append(1 if str_ex else 0)
+                scope["str_sim"].append(str_sim); scope["sf1"].append(sf1)
+                scope["tok_f"].append(tok_f); scope["geo_f"].append(geo_f)
+                scope["geo_exact"].append(1 if geo_exact else 0)
+                if use_db and exec_match is not None and gold_ok:
+                    scope["exec"].append(1 if exec_match else 0)
+                if use_db and pred_ok is not None:
+                    scope["executable"].append(1 if pred_ok else 0)
+
+            # Per spatial function: TP / FP / FN from the multiset intersection.
+            pc = Counter(geo.get("predicted_functions") or [])
+            gc = Counter(geo.get("gold_functions") or [])
+            for fn in set(pc) | set(gc):
+                tp_f = min(pc[fn], gc[fn])
+                per_function[mname][fn]["tp"] += tp_f
+                per_function[mname][fn]["fp"] += pc[fn] - tp_f
+                per_function[mname][fn]["fn"] += gc[fn] - tp_f
+                per_function[mname][fn]["gold_queries"] += 1 if gc[fn] else 0
 
             if mname == "finetuned":
                 ft_failures.update(sm.get("failures", []))
+            else:
+                base_failures.update(sm.get("failures", []))
 
             # Slim per-row detail: numbers and flags only. The full validate_sql
             # payload carries predicted_rows/gold_rows (entire result sets) — those
@@ -239,6 +296,11 @@ def score_file(path: Path, conn, compare_mode: str, use_db: bool) -> dict:
                 "component_jaccard": round(comp_j, 4),
                 "string_exact": str_ex,
                 "string_similarity": round(str_sim, 4),
+                "token_f1": round(tok_f, 4),
+                "geospatial_f1": round(geo_f, 4),
+                "spatial_exact": geo_exact,
+                "geospatial_functions": {"predicted": geo.get("predicted_functions", []),
+                                         "gold": geo.get("gold_functions", [])},
                 "failures": sm.get("failures", []),
                 "explain_error": pred_err,
             }
@@ -264,31 +326,71 @@ def score_file(path: Path, conn, compare_mode: str, use_db: bool) -> dict:
         return round(sum(xs) / len(xs), 4) if xs else None
 
     summary = {"file": str(path), "experiment": _experiment_label(path),
-               "n": len(rows), "db_used": use_db, "compare_mode": compare_mode,
+               "n": len(rows), "n_total": len(all_rows), "n_skipped_no_sql": n_skipped,
+               "db_used": use_db, "compare_mode": compare_mode,
                "gold_exec_failures": gold_exec_fail, "row_errors": row_errors,
-               "overall": {}, "by_level": {},
-               "failures_finetuned": dict(ft_failures.most_common())}
+               "overall": {}, "by_level": {}, "by_division": {}, "per_function": {},
+               "failures_finetuned": dict(ft_failures.most_common()),
+               "failures_base": dict(base_failures.most_common())}
 
     for mname, _ in PREDICTORS:
         summary["overall"][mname] = {
             "execution_accuracy": mean(agg[mname]["exec"]),
             "executable_rate": mean(agg[mname]["executable"]),
             "ast_equivalence": mean(agg[mname]["ast"]),
+            "structural_precision": mean(agg[mname]["sp"]),
+            "structural_recall": mean(agg[mname]["sr"]),
             "structural_f1": mean(agg[mname]["sf1"]),
             "component_jaccard": mean(agg[mname]["comp"]),
             "string_exact": mean(agg[mname]["str_exact"]),
             "string_similarity": mean(agg[mname]["str_sim"]),
+            "token_precision": mean(agg[mname]["tok_p"]),
+            "token_recall": mean(agg[mname]["tok_r"]),
+            "token_f1": mean(agg[mname]["tok_f"]),
+            "geospatial_precision": mean(agg[mname]["geo_p"]),
+            "geospatial_recall": mean(agg[mname]["geo_r"]),
+            "geospatial_f1": mean(agg[mname]["geo_f"]),
+            "spatial_exact_match": mean(agg[mname]["geo_exact"]),
+            "geospatial_counts": {"tp": sum(agg[mname]["geo_tp"]),
+                                  "fp": sum(agg[mname]["geo_fp"]),
+                                  "fn": sum(agg[mname]["geo_fn"])},
+        }
+
+    def scope_summary(sc):
+        return {
+            "n": len(sc["ast"]),
+            "execution_accuracy": mean(sc["exec"]),
+            "executable_rate": mean(sc["executable"]),
+            "ast_equivalence": mean(sc["ast"]),
+            "structural_f1": mean(sc["sf1"]),
+            "component_jaccard": mean(sc["comp"]),
+            "string_exact": mean(sc["str_exact"]),
+            "string_similarity": mean(sc["str_sim"]),
+            "token_f1": mean(sc["tok_f"]),
+            "geospatial_f1": mean(sc["geo_f"]),
+            "spatial_exact_match": mean(sc["geo_exact"]),
         }
 
     levels = sorted({(r.get("nivel", r.get("level", "")) or "") for r in rows})
     for lvl in levels:
-        summary["by_level"][lvl] = {}
-        for mname, _ in PREDICTORS:
-            summary["by_level"][lvl][mname] = {
-                "execution_accuracy": mean(by_level[mname][lvl]["exec"]),
-                "executable_rate": mean(by_level[mname][lvl]["executable"]),
-                "ast_equivalence": mean(by_level[mname][lvl]["ast"]),
-            }
+        summary["by_level"][lvl] = {mname: scope_summary(by_level[mname][lvl])
+                                    for mname, _ in PREDICTORS}
+    divisions = sorted({(r.get("divisao", r.get("territorial_division", "")) or "") for r in rows})
+    for dv in divisions:
+        if dv == "" and len(divisions) > 1:
+            continue
+        summary["by_division"][dv] = {mname: scope_summary(by_division[mname][dv])
+                                      for mname, _ in PREDICTORS}
+    for mname, _ in PREDICTORS:
+        summary["per_function"][mname] = {}
+        for fn, c in sorted(per_function[mname].items()):
+            tp, fp, fn_ = c["tp"], c["fp"], c["fn"]
+            prec = tp / (tp + fp) if (tp + fp) else 0.0
+            rec = tp / (tp + fn_) if (tp + fn_) else 0.0
+            f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
+            summary["per_function"][mname][fn] = {
+                "tp": tp, "fp": fp, "fn": fn_, "gold_queries": c["gold_queries"],
+                "precision": round(prec, 4), "recall": round(rec, 4), "f1": round(f1, 4)}
 
     # delta = the study number (fine-tuned − base) on the headline metric
     def delta(metric, scope_base, scope_ft):
@@ -319,7 +421,7 @@ def print_report(rep: dict):
         return "  n/a" if v is None else f"{v:6.3f}"
 
     logger.info(f"  {'metric':<22}{'base':>10}{'fine-tuned':>14}{'Δ':>10}")
-    for m in ("execution_accuracy", "executable_rate", "ast_equivalence",
+    for m in ("execution_accuracy", "executable_rate", "ast_equivalence", "token_f1", "geospatial_f1", "spatial_exact_match",
               "structural_f1", "component_jaccard", "string_exact", "string_similarity"):
         b = s["overall"]["base"][m]; f = s["overall"]["finetuned"][m]
         d = (round(f - b, 4) if (b is not None and f is not None) else None)
@@ -336,6 +438,79 @@ def print_report(rep: dict):
         logger.info("Most common failures (fine-tuned):")
         for k, v in list(s["failures_finetuned"].items())[:8]:
             logger.info(f"    {k:<24} {v}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MLflow: attach the evaluation to the experiment's training run
+# ═══════════════════════════════════════════════════════════════════════════
+def _flat_metrics(summary: dict) -> dict:
+    """Flatten the summary into MLflow metric names, e.g.
+    eval/finetuned/geospatial_f1, eval/by_level/Fácil/finetuned/execution_accuracy."""
+    out = {}
+    for mname, mets in summary["overall"].items():
+        for k, v in mets.items():
+            if isinstance(v, (int, float)):
+                out[f"eval/{mname}/{k}"] = float(v)
+            elif isinstance(v, dict):
+                for kk, vv in v.items():
+                    out[f"eval/{mname}/{k}_{kk}"] = float(vv)
+    for scope_name in ("by_level", "by_division"):
+        for key, per_model in summary.get(scope_name, {}).items():
+            safe = re.sub(r"[^0-9A-Za-z_./ -]", "_", key or "NA")
+            for mname, mets in per_model.items():
+                for k, v in mets.items():
+                    if isinstance(v, (int, float)):
+                        out[f"eval/{scope_name}/{safe}/{mname}/{k}"] = float(v)
+    for mname, funcs in summary.get("per_function", {}).items():
+        for fn, c in funcs.items():
+            for k in ("precision", "recall", "f1", "tp", "fp", "fn"):
+                out[f"eval/per_function/{fn}/{mname}/{k}"] = float(c[k])
+    b, f = summary["overall"].get("base", {}), summary["overall"].get("finetuned", {})
+    for k in ("execution_accuracy", "executable_rate", "token_f1", "structural_f1",
+              "component_jaccard", "geospatial_f1", "spatial_exact_match", "string_similarity"):
+        if b.get(k) is not None and f.get(k) is not None:
+            out[f"eval/delta/{k}"] = float(f[k]) - float(b[k])
+    return out
+
+
+def log_to_mlflow(rep: dict, path: Path, out_dir: Path) -> None:
+    import mlflow
+    summary = rep["summary"]
+    label = summary["experiment"]
+    m = re.match(r"v(\d+)$", label)
+    run_id = load_run_id(int(m.group(1))) if m else None
+    try:
+        mlflow.set_tracking_uri(build_mlflow_uri(logger))
+        mlflow.set_experiment(PROJECT_NAME)
+        if mlflow.active_run() is not None:
+            mlflow.end_run()
+        if run_id:
+            mlflow.start_run(run_id=run_id)
+            logger.info(f"MLflow: attached evaluation to training run {run_id}")
+        else:
+            mlflow.start_run(run_name=f"eval_{label}", tags={"experiment_version": label,
+                                                             "stage": "evaluate"})
+            logger.info(f"MLflow: no training run id for {label}; started run eval_{label}")
+        mlflow.log_params({"eval_db_used": summary["db_used"], "eval_compare_mode": summary["compare_mode"],
+                           "eval_n": summary["n"], "eval_n_total": summary["n_total"],
+                           "eval_n_skipped_no_sql": summary["n_skipped_no_sql"],
+                           "eval_gold_exec_failures": summary["gold_exec_failures"]})
+        mlflow.log_metrics(_flat_metrics(summary))
+        for k, v in summary["failures_finetuned"].items():
+            mlflow.log_metric(f"eval/failures/finetuned/{k}", float(v))
+        for k, v in summary["failures_base"].items():
+            mlflow.log_metric(f"eval/failures/base/{k}", float(v))
+        spath = out_dir / f"summary_{label}.json"
+        if not spath.exists():
+            spath.write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        mlflow.log_artifact(str(spath), artifact_path="evaluation")
+        mlflow.log_artifact(str(path), artifact_path="evaluation")
+        dpath = out_dir / f"details_{label}.json"
+        dpath.write_text(json.dumps(rep["rows"], ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        mlflow.log_artifact(str(dpath), artifact_path="evaluation")
+        mlflow.end_run()
+    except Exception as e:
+        logger.error(f"MLflow logging failed (report files are still written): {e}", exc_info=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -363,6 +538,11 @@ def main():
     ap.add_argument("--out-dir", default=None,
                     help=f"Folder for the consolidated report "
                          f"(default: {Path(PROJECT_PATH) / 'results'}).")
+    ap.add_argument("--all-records", action="store_true",
+                    help="Average over every record. Default: only records where at least "
+                         "one model produced SQL (the paper's 'comparable pairs').")
+    ap.add_argument("--no-mlflow", action="store_true",
+                    help="Do not log metrics/artifacts to MLflow.")
     args = ap.parse_args()
 
     # ── Resolve which prediction files to score ──────────────────────────────
@@ -406,9 +586,18 @@ def main():
                 logger.warning(f"File not found, skipping: {path}")
                 continue
             logger.info(f"Evaluating {path} …")
-            rep = score_file(path, conn, args.compare_mode, use_db)
+            rep = score_file(path, conn, args.compare_mode, use_db,
+                             comparable_only=not args.all_records)
             print_report(rep)
             reports.append(rep["summary"])
+            # Per-experiment summary (all scopes) — consumed by compare_with_paper.py.
+            label = rep["summary"]["experiment"]
+            spath = out_dir / f"summary_{label}.json"
+            spath.write_text(json.dumps(rep["summary"], ensure_ascii=False, indent=2, default=str),
+                             encoding="utf-8")
+            logger.info(f"  summary saved -> {spath.resolve()}")
+            if not args.no_mlflow:
+                log_to_mlflow(rep, path, out_dir)
 
             # Per-row detail is large; write it (slim, no result sets) only on request,
             # one file per experiment — never inside the consolidated summary report.

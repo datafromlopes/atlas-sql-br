@@ -13,6 +13,7 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 from .utils import GeoDataset, Logger
+from . import experiment
 
 from .global_variables import (
     PROJECT_NAME,
@@ -24,6 +25,7 @@ from .global_variables import (
 )
 
 __all__ = [
+    'experiment',
     'GeoDataset',
     'Logger',
     'PROJECT_NAME', 

@@ -31,7 +31,8 @@ Por isso ela é DIAGNÓSTICO; o veredito é a Execution Accuracy.
 Interface pública (inalterada):
   parse_sql, ast_canonical_equivalence, structural_f1, execution_accuracy,
   component_matching, component_matching_score, string_matching,
-  classify_failure, validate_sql, FailureType, ComponentMatchResult
+  geospatial_function_f1, classify_failure, validate_sql, FailureType,
+  ComponentMatchResult
 """
 from __future__ import annotations
 
@@ -457,6 +458,72 @@ def string_matching(predicted: str, gold: str) -> dict[str, Any]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 6b — GEOSPATIAL FUNCTION F1 / SPATIAL EXACT MATCH
+# ═══════════════════════════════════════════════════════════════════════════
+# Métrica específica deste trabalho. Nenhuma das anteriores enxerga o erro em
+# que a query tem a estrutura certa (joins, cláusulas, agregação) mas usa o
+# predicado espacial errado: Structural F1 dá o mesmo tipo de nó para
+# ST_Within e ST_Intersects, e as métricas de string quase não penalizam a
+# troca de poucos caracteres. Aqui a comparação é feita diretamente sobre o
+# MULTICONJUNTO de chamadas de função PostGIS (ST_*) extraído do fluxo de
+# tokens normalizado (via _norm), com precisão, revocação e F1:
+#
+#   P = |Ĝ ∩ G*| / |Ĝ|      R = |Ĝ ∩ G*| / |G*|      F1 = 2PR / (P + R)
+#
+# onde Ĝ e G* são os multiconjuntos da query predita e da gold. A interseção
+# de multiconjuntos conta cada função min(#pred, #gold) vezes, de modo que
+# repetir ST_Intersects três vezes quando o gold tem uma conta um TP e dois FP.
+# Spatial Exact Match é verdadeiro quando os dois multiconjuntos são iguais,
+# isto é, a predição reproduz todas as funções espaciais do gold, com a mesma
+# multiplicidade, e nenhuma a mais.
+#
+# Casos de borda: gold sem função espacial e predição também sem → 1.0 e match
+# (não há nada a acertar); gold sem função e predição com alguma → P = R = 0.
+_GEO_FUNC_RE = re.compile(r"\bst_[a-z0-9_]+(?=\s*\()")
+
+
+def geospatial_functions(sql: str) -> Counter:
+    """Multiconjunto (Counter) das chamadas de função PostGIS ST_* em `sql`.
+
+    Trabalha sobre o texto normalizado por `_norm` (minúsculas, sem comentários,
+    espaços colapsados); só conta identificadores `st_*` seguidos de `(`, para
+    não confundir nomes de colunas/aliases com funções.
+    """
+    return Counter(_GEO_FUNC_RE.findall(_norm(sql or "")))
+
+
+def geospatial_function_f1(predicted: str, gold: str) -> dict[str, Any]:
+    """Precision / recall / F1 sobre o multiconjunto de funções ST_* e o
+    Spatial Exact Match (multiconjuntos idênticos).
+
+    Retorna também os contadores brutos (tp, fp, fn) e as listas de funções,
+    para permitir a análise por função e a contagem agregada de falsos
+    positivos usada na discussão dos resultados.
+    """
+    pc, gc = geospatial_functions(predicted), geospatial_functions(gold)
+    tp = sum((pc & gc).values())
+    n_pred, n_gold = sum(pc.values()), sum(gc.values())
+    fp, fn = n_pred - tp, n_gold - tp
+
+    if n_pred == 0 and n_gold == 0:
+        prec = rec = f1 = 1.0
+    else:
+        prec = tp / n_pred if n_pred else 0.0
+        rec = tp / n_gold if n_gold else 0.0
+        f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
+
+    return {
+        "precision": round(prec, 4),
+        "recall": round(rec, 4),
+        "f1": round(f1, 4),
+        "spatial_exact": pc == gc,
+        "tp": tp, "fp": fp, "fn": fn,
+        "predicted_functions": sorted(pc.elements()),
+        "gold_functions": sorted(gc.elements()),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 7 — FAILURE TAXONOMY
 # ═══════════════════════════════════════════════════════════════════════════
 class FailureType(Enum):
@@ -592,6 +659,7 @@ class SQLValidationReport:
     component_results: dict = field(default_factory=dict)
     component_avg_jaccard: float = 0.0
     string: dict = field(default_factory=dict)
+    geospatial: dict = field(default_factory=dict)
     failures: list = field(default_factory=list)
 
 
@@ -627,6 +695,7 @@ def validate_sql(
     r.component_avg_jaccard = component_matching_score(predicted, gold)
 
     r.string = string_matching(predicted, gold)
+    r.geospatial = geospatial_function_f1(predicted, gold)
     r.failures = [f.value for f in classify_failure(predicted, gold, ex_result)]
 
     payload = {
@@ -636,6 +705,9 @@ def validate_sql(
             "component_avg_jaccard": round(r.component_avg_jaccard, 4),
             "string_exact": r.string.get("exact"),
             "string_similarity": r.string.get("similarity"),
+            "token_f1": (r.string.get("token_f1") or {}).get("f1"),
+            "geospatial_f1": r.geospatial.get("f1"),
+            "spatial_exact": r.geospatial.get("spatial_exact"),
             "failures": r.failures,
         },
         "ast": {"equivalent": r.ast_equivalent, "parse_error": r.ast_parse_error},
@@ -649,5 +721,6 @@ def validate_sql(
         } if r.ex_match is not None else None,
         "components": r.component_results,
         "string": r.string,
+        "geospatial": r.geospatial,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)

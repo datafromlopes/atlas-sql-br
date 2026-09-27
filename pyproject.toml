@@ -1,7 +1,7 @@
 [project]
 name = "atlas-sql-br"
 version = "0.1.0"
-description = "Add your description here"
+description = "AtlasSQL-BR: Brazilian Portuguese geospatial Text-to-SQL dataset and fine-tuning pipeline"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -15,4 +15,12 @@ dependencies = [
     "sqlglot>=30.9.0",
     "torch>=2.11.0",
     "transformers>=5.9.0",
+    "accelerate>=1.0.0",
+    "huggingface-hub>=0.30.0",
+    "pyyaml>=6.0",
 ]
+
+[project.optional-dependencies]
+# AdamW 8-bit (adamw_bnb_8bit) is CUDA-only; install on the GPU box:
+#   uv sync --extra cuda
+cuda = ["bitsandbytes>=0.45.0"]

@@ -1,0 +1,871 @@
+{
+  "file": "data/predictions/predictions_v6.json",
+  "experiment": "v6",
+  "n": 196,
+  "n_total": 196,
+  "n_skipped_no_sql": 0,
+  "db_used": true,
+  "compare_mode": "auto",
+  "gold_exec_failures": 0,
+  "row_errors": 0,
+  "overall": {
+    "base": {
+      "execution_accuracy": 0.0,
+      "executable_rate": 0.0,
+      "ast_equivalence": 0.0,
+      "structural_precision": 0.2708,
+      "structural_recall": 0.1342,
+      "structural_f1": 0.1691,
+      "component_jaccard": 0.2653,
+      "string_exact": 0.0,
+      "string_similarity": 0.0988,
+      "token_precision": 0.368,
+      "token_recall": 0.2991,
+      "token_f1": 0.2854,
+      "geospatial_precision": 0.1168,
+      "geospatial_recall": 0.1345,
+      "geospatial_f1": 0.1084,
+      "spatial_exact_match": 0.0051,
+      "geospatial_counts": {
+        "tp": 86,
+        "fp": 340,
+        "fn": 533
+      }
+    },
+    "finetuned": {
+      "execution_accuracy": 0.1582,
+      "executable_rate": 0.5255,
+      "ast_equivalence": 0.0051,
+      "structural_precision": 0.7693,
+      "structural_recall": 0.7587,
+      "structural_f1": 0.7531,
+      "component_jaccard": 0.2917,
+      "string_exact": 0.0051,
+      "string_similarity": 0.5326,
+      "token_precision": 0.7839,
+      "token_recall": 0.7556,
+      "token_f1": 0.7569,
+      "geospatial_precision": 0.6639,
+      "geospatial_recall": 0.658,
+      "geospatial_f1": 0.6394,
+      "spatial_exact_match": 0.2806,
+      "geospatial_counts": {
+        "tp": 397,
+        "fp": 224,
+        "fn": 222
+      }
+    }
+  },
+  "by_level": {
+    "Difícil": {
+      "base": {
+        "n": 49,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.0,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.1648,
+        "component_jaccard": 0.3061,
+        "string_exact": 0.0,
+        "string_similarity": 0.0794,
+        "token_f1": 0.2901,
+        "geospatial_f1": 0.1373,
+        "spatial_exact_match": 0.0
+      },
+      "finetuned": {
+        "n": 49,
+        "execution_accuracy": 0.1429,
+        "executable_rate": 0.3878,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.748,
+        "component_jaccard": 0.3271,
+        "string_exact": 0.0,
+        "string_similarity": 0.5315,
+        "token_f1": 0.7533,
+        "geospatial_f1": 0.7028,
+        "spatial_exact_match": 0.2653
+      }
+    },
+    "Fácil": {
+      "base": {
+        "n": 49,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.0,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.1895,
+        "component_jaccard": 0.2245,
+        "string_exact": 0.0,
+        "string_similarity": 0.1783,
+        "token_f1": 0.2564,
+        "geospatial_f1": 0.1007,
+        "spatial_exact_match": 0.0204
+      },
+      "finetuned": {
+        "n": 49,
+        "execution_accuracy": 0.2653,
+        "executable_rate": 0.7755,
+        "ast_equivalence": 0.0204,
+        "structural_f1": 0.8452,
+        "component_jaccard": 0.3167,
+        "string_exact": 0.0204,
+        "string_similarity": 0.7211,
+        "token_f1": 0.816,
+        "geospatial_f1": 0.5875,
+        "spatial_exact_match": 0.5306
+      }
+    },
+    "Muito Difícil": {
+      "base": {
+        "n": 49,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.0,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.168,
+        "component_jaccard": 0.3061,
+        "string_exact": 0.0,
+        "string_similarity": 0.0549,
+        "token_f1": 0.3366,
+        "geospatial_f1": 0.1029,
+        "spatial_exact_match": 0.0
+      },
+      "finetuned": {
+        "n": 49,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.3061,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.5945,
+        "component_jaccard": 0.2537,
+        "string_exact": 0.0,
+        "string_similarity": 0.2764,
+        "token_f1": 0.6652,
+        "geospatial_f1": 0.5768,
+        "spatial_exact_match": 0.1224
+      }
+    },
+    "Médio": {
+      "base": {
+        "n": 49,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.0,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.1541,
+        "component_jaccard": 0.2245,
+        "string_exact": 0.0,
+        "string_similarity": 0.0825,
+        "token_f1": 0.2583,
+        "geospatial_f1": 0.0929,
+        "spatial_exact_match": 0.0
+      },
+      "finetuned": {
+        "n": 49,
+        "execution_accuracy": 0.2245,
+        "executable_rate": 0.6327,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.8246,
+        "component_jaccard": 0.2691,
+        "string_exact": 0.0,
+        "string_similarity": 0.6016,
+        "token_f1": 0.7929,
+        "geospatial_f1": 0.6905,
+        "spatial_exact_match": 0.2041
+      }
+    }
+  },
+  "by_division": {
+    "Bairro": {
+      "base": {
+        "n": 28,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.0,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.1475,
+        "component_jaccard": 0.2857,
+        "string_exact": 0.0,
+        "string_similarity": 0.1042,
+        "token_f1": 0.2761,
+        "geospatial_f1": 0.0698,
+        "spatial_exact_match": 0.0
+      },
+      "finetuned": {
+        "n": 28,
+        "execution_accuracy": 0.1429,
+        "executable_rate": 0.6071,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.7557,
+        "component_jaccard": 0.2733,
+        "string_exact": 0.0,
+        "string_similarity": 0.498,
+        "token_f1": 0.7417,
+        "geospatial_f1": 0.6521,
+        "spatial_exact_match": 0.2857
+      }
+    },
+    "Distrito": {
+      "base": {
+        "n": 28,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.0,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.2208,
+        "component_jaccard": 0.2143,
+        "string_exact": 0.0,
+        "string_similarity": 0.1128,
+        "token_f1": 0.3373,
+        "geospatial_f1": 0.175,
+        "spatial_exact_match": 0.0357
+      },
+      "finetuned": {
+        "n": 28,
+        "execution_accuracy": 0.1429,
+        "executable_rate": 0.5357,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.7428,
+        "component_jaccard": 0.3882,
+        "string_exact": 0.0,
+        "string_similarity": 0.5921,
+        "token_f1": 0.7908,
+        "geospatial_f1": 0.7052,
+        "spatial_exact_match": 0.4643
+      }
+    },
+    "Estado": {
+      "base": {
+        "n": 28,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.0,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.2029,
+        "component_jaccard": 0.2143,
+        "string_exact": 0.0,
+        "string_similarity": 0.1144,
+        "token_f1": 0.2828,
+        "geospatial_f1": 0.1595,
+        "spatial_exact_match": 0.0
+      },
+      "finetuned": {
+        "n": 28,
+        "execution_accuracy": 0.1071,
+        "executable_rate": 0.4286,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.741,
+        "component_jaccard": 0.2639,
+        "string_exact": 0.0,
+        "string_similarity": 0.4628,
+        "token_f1": 0.7057,
+        "geospatial_f1": 0.694,
+        "spatial_exact_match": 0.2857
+      }
+    },
+    "Município": {
+      "base": {
+        "n": 28,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.0,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.1805,
+        "component_jaccard": 0.2143,
+        "string_exact": 0.0,
+        "string_similarity": 0.1044,
+        "token_f1": 0.2796,
+        "geospatial_f1": 0.138,
+        "spatial_exact_match": 0.0
+      },
+      "finetuned": {
+        "n": 28,
+        "execution_accuracy": 0.1429,
+        "executable_rate": 0.5714,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.7468,
+        "component_jaccard": 0.3514,
+        "string_exact": 0.0,
+        "string_similarity": 0.6098,
+        "token_f1": 0.7919,
+        "geospatial_f1": 0.6143,
+        "spatial_exact_match": 0.2857
+      }
+    },
+    "País": {
+      "base": {
+        "n": 28,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.0,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.1648,
+        "component_jaccard": 0.2143,
+        "string_exact": 0.0,
+        "string_similarity": 0.0978,
+        "token_f1": 0.2815,
+        "geospatial_f1": 0.0746,
+        "spatial_exact_match": 0.0
+      },
+      "finetuned": {
+        "n": 28,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.3571,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.7247,
+        "component_jaccard": 0.2375,
+        "string_exact": 0.0,
+        "string_similarity": 0.4617,
+        "token_f1": 0.7487,
+        "geospatial_f1": 0.6371,
+        "spatial_exact_match": 0.2857
+      }
+    },
+    "Região": {
+      "base": {
+        "n": 28,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.0,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.1306,
+        "component_jaccard": 0.3929,
+        "string_exact": 0.0,
+        "string_similarity": 0.0725,
+        "token_f1": 0.2667,
+        "geospatial_f1": 0.0484,
+        "spatial_exact_match": 0.0
+      },
+      "finetuned": {
+        "n": 28,
+        "execution_accuracy": 0.2143,
+        "executable_rate": 0.6071,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.7867,
+        "component_jaccard": 0.319,
+        "string_exact": 0.0,
+        "string_similarity": 0.5848,
+        "token_f1": 0.7721,
+        "geospatial_f1": 0.5972,
+        "spatial_exact_match": 0.2143
+      }
+    },
+    "Rua": {
+      "base": {
+        "n": 28,
+        "execution_accuracy": 0.0,
+        "executable_rate": 0.0,
+        "ast_equivalence": 0.0,
+        "structural_f1": 0.1368,
+        "component_jaccard": 0.3214,
+        "string_exact": 0.0,
+        "string_similarity": 0.0853,
+        "token_f1": 0.2735,
+        "geospatial_f1": 0.0939,
+        "spatial_exact_match": 0.0
+      },
+      "finetuned": {
+        "n": 28,
+        "execution_accuracy": 0.3571,
+        "executable_rate": 0.5714,
+        "ast_equivalence": 0.0357,
+        "structural_f1": 0.7738,
+        "component_jaccard": 0.2084,
+        "string_exact": 0.0357,
+        "string_similarity": 0.5192,
+        "token_f1": 0.7471,
+        "geospatial_f1": 0.5759,
+        "spatial_exact_match": 0.1429
+      }
+    }
+  },
+  "per_function": {
+    "base": {
+      "st_area": {
+        "tp": 6,
+        "fp": 6,
+        "fn": 16,
+        "gold_queries": 17,
+        "precision": 0.5,
+        "recall": 0.2727,
+        "f1": 0.3529
+      },
+      "st_asgeojson": {
+        "tp": 0,
+        "fp": 4,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_astext": {
+        "tp": 0,
+        "fp": 4,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_boundary": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 38,
+        "gold_queries": 34,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_buffer": {
+        "tp": 26,
+        "fp": 11,
+        "fn": 67,
+        "gold_queries": 71,
+        "precision": 0.7027,
+        "recall": 0.2796,
+        "f1": 0.4
+      },
+      "st_centroid": {
+        "tp": 3,
+        "fp": 0,
+        "fn": 10,
+        "gold_queries": 12,
+        "precision": 1.0,
+        "recall": 0.2308,
+        "f1": 0.375
+      },
+      "st_closestpoint": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_contains": {
+        "tp": 2,
+        "fp": 0,
+        "fn": 62,
+        "gold_queries": 56,
+        "precision": 1.0,
+        "recall": 0.0312,
+        "f1": 0.0606
+      },
+      "st_distance": {
+        "tp": 10,
+        "fp": 30,
+        "fn": 42,
+        "gold_queries": 48,
+        "precision": 0.25,
+        "recall": 0.1923,
+        "f1": 0.2174
+      },
+      "st_distance_sphere": {
+        "tp": 0,
+        "fp": 37,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_distancesphere": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_dwithin": {
+        "tp": 3,
+        "fp": 4,
+        "fn": 66,
+        "gold_queries": 66,
+        "precision": 0.4286,
+        "recall": 0.0435,
+        "f1": 0.0789
+      },
+      "st_envelope": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 1,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_geomfromtext": {
+        "tp": 0,
+        "fp": 53,
+        "fn": 2,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_intersection": {
+        "tp": 11,
+        "fp": 83,
+        "fn": 34,
+        "gold_queries": 42,
+        "precision": 0.117,
+        "recall": 0.2444,
+        "f1": 0.1583
+      },
+      "st_intersects": {
+        "tp": 22,
+        "fp": 25,
+        "fn": 97,
+        "gold_queries": 90,
+        "precision": 0.4681,
+        "recall": 0.1849,
+        "f1": 0.2651
+      },
+      "st_isempty": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 1,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_isvalid": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 1,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_length": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 1,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_makebox2d": {
+        "tp": 0,
+        "fp": 3,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_makeenvelope": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_makepoint": {
+        "tp": 0,
+        "fp": 12,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_setsrid": {
+        "tp": 0,
+        "fp": 10,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_transform": {
+        "tp": 0,
+        "fp": 39,
+        "fn": 8,
+        "gold_queries": 3,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_translate": {
+        "tp": 0,
+        "fp": 3,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_union": {
+        "tp": 0,
+        "fp": 3,
+        "fn": 2,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_within": {
+        "tp": 3,
+        "fp": 10,
+        "fn": 85,
+        "gold_queries": 69,
+        "precision": 0.2308,
+        "recall": 0.0341,
+        "f1": 0.0594
+      }
+    },
+    "finetuned": {
+      "st_area": {
+        "tp": 15,
+        "fp": 3,
+        "fn": 7,
+        "gold_queries": 17,
+        "precision": 0.8333,
+        "recall": 0.6818,
+        "f1": 0.75
+      },
+      "st_boundary": {
+        "tp": 28,
+        "fp": 16,
+        "fn": 10,
+        "gold_queries": 34,
+        "precision": 0.6364,
+        "recall": 0.7368,
+        "f1": 0.6829
+      },
+      "st_buffer": {
+        "tp": 71,
+        "fp": 26,
+        "fn": 22,
+        "gold_queries": 71,
+        "precision": 0.732,
+        "recall": 0.7634,
+        "f1": 0.7474
+      },
+      "st_centroid": {
+        "tp": 9,
+        "fp": 3,
+        "fn": 4,
+        "gold_queries": 12,
+        "precision": 0.75,
+        "recall": 0.6923,
+        "f1": 0.72
+      },
+      "st_contains": {
+        "tp": 31,
+        "fp": 37,
+        "fn": 33,
+        "gold_queries": 56,
+        "precision": 0.4559,
+        "recall": 0.4844,
+        "f1": 0.4697
+      },
+      "st_distance": {
+        "tp": 41,
+        "fp": 12,
+        "fn": 11,
+        "gold_queries": 48,
+        "precision": 0.7736,
+        "recall": 0.7885,
+        "f1": 0.781
+      },
+      "st_dwithin": {
+        "tp": 63,
+        "fp": 16,
+        "fn": 6,
+        "gold_queries": 66,
+        "precision": 0.7975,
+        "recall": 0.913,
+        "f1": 0.8514
+      },
+      "st_envelope": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 1,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_extent": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_geomfromtext": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 2,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_hasgeometry": {
+        "tp": 0,
+        "fp": 2,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_intersection": {
+        "tp": 33,
+        "fp": 12,
+        "fn": 12,
+        "gold_queries": 42,
+        "precision": 0.7333,
+        "recall": 0.7333,
+        "f1": 0.7333
+      },
+      "st_intersects": {
+        "tp": 65,
+        "fp": 30,
+        "fn": 54,
+        "gold_queries": 90,
+        "precision": 0.6842,
+        "recall": 0.5462,
+        "f1": 0.6075
+      },
+      "st_isempty": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 1,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_isvalid": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 1,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_length": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 1,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_setsrid": {
+        "tp": 0,
+        "fp": 3,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_touches": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_transform": {
+        "tp": 0,
+        "fp": 4,
+        "fn": 8,
+        "gold_queries": 3,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_union": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 2,
+        "gold_queries": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_within": {
+        "tp": 41,
+        "fp": 56,
+        "fn": 47,
+        "gold_queries": 69,
+        "precision": 0.4227,
+        "recall": 0.4659,
+        "f1": 0.4432
+      },
+      "st_x": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "st_y": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "gold_queries": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    }
+  },
+  "failures_finetuned": {
+    "wrong_columns": 124,
+    "wrong_condition_value": 113,
+    "execution_error": 103,
+    "missing_join": 73,
+    "wrong_join_type": 49,
+    "wrong_condition_op": 45,
+    "missing_group_by": 45,
+    "wrong_join_condition": 40,
+    "wrong_order_by": 40,
+    "wrong_aggregation": 35,
+    "parse_error": 10,
+    "missing_having": 3,
+    "wrong_limit": 2,
+    "missing_subquery": 1,
+    "correct": 1
+  },
+  "failures_base": {
+    "execution_error": 137,
+    "missing_join": 120,
+    "wrong_columns": 107,
+    "wrong_condition_value": 69,
+    "missing_group_by": 64,
+    "wrong_condition_op": 61,
+    "parse_error": 59,
+    "wrong_order_by": 53,
+    "wrong_aggregation": 30,
+    "wrong_join_condition": 6,
+    "wrong_join_type": 4,
+    "wrong_limit": 4,
+    "wrong_set_op": 2,
+    "missing_subquery": 2,
+    "missing_distinct": 1
+  },
+  "dataset_value_delta": {
+    "metric": "execution_accuracy",
+    "overall": 0.1582,
+    "by_level": {
+      "Difícil": 0.1429,
+      "Fácil": 0.2653,
+      "Muito Difícil": 0.0,
+      "Médio": 0.2245
+    }
+  }
+}

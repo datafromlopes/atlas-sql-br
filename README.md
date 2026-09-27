@@ -159,6 +159,54 @@ The consolidated report is written to `results/experiments_reports.json`, contai
 
 ---
 
+## Reproducing the paper experiment (exp-v6)
+
+`experiments/exp-v6.yaml` reproduces the experiment reported in the SBBD 2026 paper:
+Llama-3.1-8B-Instruct adapted with LoRA (q_proj/v_proj, r=8, α=32, dropout 0.1) on the
+980 curated pairs split 784/196 (stratified by complexity tier and spatial function),
+10 epochs, batch 2 × 2 accumulation, weight decay 0.01, 612 warmup steps, bf16, gradient
+checkpointing, best checkpoint by validation loss, prompt `Traduza para SQL: {question}`,
+greedy decoding with 512 new tokens. The YAML documents the two deviations imposed by an
+Apple Silicon workstation (AdamW instead of the CUDA-only 8-bit AdamW; no TF32). The split is
+stratified by tier, spatial function and territorial division (one validation pair per cell) and is
+published as the `thesis-split` tag of the dataset; the trained adapter is published as
+[`datafromlopes/llama-3.1-8b-atlassql-br`](https://huggingface.co/datafromlopes/llama-3.1-8b-atlassql-br).
+
+Every stage logs to the same MLflow run (the training stage writes the run id to
+`models/experiments/v6/mlflow_run_id.txt`): parameters, per-step curves, system metrics,
+dataset files and md5, config, adapter artifacts, predictions, and every evaluation metric
+overall, by tier, by territorial division and by spatial function.
+
+```bash
+cp .env.example .env && $EDITOR .env && source .env   # HF_TOKEN, PG_USER/PG_PASS, ATLAS_DSN
+uv sync                                               # add `--extra cuda` on an NVIDIA box
+
+# 0. Build the 784/196 split described in the paper (deterministic, seed 42)
+uv run python core/make_paper_split.py                # writes data/paper_split/
+
+# 1. Train (Apple Silicon: several hours for the 10 epochs)
+uv run python core/finetuning_strategies.py --experiment_version 6
+
+# 2. Generate SQL for the 196 validation questions with the base and the fine-tuned model
+uv run python core/generate_sql_preds.py --experiment_version 6
+
+# 3. Evaluate: paper metrics + execution accuracy against the PostGIS reference database
+uv run python core/evaluate_sql_preds.py --predictions data/predictions/predictions_v6.json \
+    --dsn "$ATLAS_DSN" --save-details
+
+# 4. Side-by-side comparison with Table 3 of the paper
+uv run python core/compare_with_paper.py --experiment 6   # -> results/paper_comparison_v6.md
+
+# Follow the run
+uv run mlflow ui --backend-store-uri "postgresql://$PG_USER:$PG_PASS@localhost:5432/mlflow"
+```
+
+Metric definitions (all in `core/sql_validation.py`): Exact Match, String Similarity,
+Token P/R/F1, Structural P/R/F1 (AST node multisets), Component Jaccard (per clause),
+**Geospatial Function P/R/F1** and **Spatial Exact Match** (multiset of PostGIS `ST_*`
+calls extracted from the normalized token stream), and, with a database, Execution
+Accuracy (result-set comparison) and Executable Rate (`EXPLAIN` succeeds).
+
 ## Usage
 
 The project uses [`uv`](https://github.com/astral-sh/uv) for dependency management.

@@ -1,0 +1,68 @@
+{
+  "source_file": "/Users/diegolopes/repositories/atlas_sql_br/data/paper_released/train.parquet",
+  "source_md5": "bd62f326098f882009ca72b7f26c5c97",
+  "source_partition": "base_dataset",
+  "seed": 42,
+  "val_fraction": 0.2,
+  "stratified_by": [
+    "level",
+    "geospatial_functions",
+    "territorial_division"
+  ],
+  "train": {
+    "rows": 784,
+    "by_tier": {
+      "Difícil": 196,
+      "Fácil": 196,
+      "Muito Difícil": 196,
+      "Médio": 196
+    },
+    "by_function": {
+      "ST_Buffer": 112,
+      "ST_Contains": 112,
+      "ST_DWithin": 112,
+      "ST_Distance": 112,
+      "ST_Intersection": 112,
+      "ST_Intersects": 112,
+      "ST_Within": 112
+    },
+    "by_division": {
+      "Bairro": 112,
+      "Distrito": 112,
+      "Estado": 112,
+      "Município": 112,
+      "País": 112,
+      "Região": 112,
+      "Rua": 112
+    }
+  },
+  "validation": {
+    "rows": 196,
+    "by_tier": {
+      "Difícil": 49,
+      "Fácil": 49,
+      "Muito Difícil": 49,
+      "Médio": 49
+    },
+    "by_function": {
+      "ST_Buffer": 28,
+      "ST_Contains": 28,
+      "ST_DWithin": 28,
+      "ST_Distance": 28,
+      "ST_Intersection": 28,
+      "ST_Intersects": 28,
+      "ST_Within": 28
+    },
+    "by_division": {
+      "Bairro": 28,
+      "Distrito": 28,
+      "Estado": 28,
+      "Município": 28,
+      "País": 28,
+      "Região": 28,
+      "Rua": 28
+    }
+  },
+  "train_md5": "c759e6c383ed39459ea9622dc1160911",
+  "validation_md5": "645ff583d3deb55dbbe02807d6e0ecaf"
+}

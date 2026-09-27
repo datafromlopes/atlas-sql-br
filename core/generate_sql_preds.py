@@ -65,14 +65,14 @@ root_dir = os.path.abspath(os.path.join(current_dir, ".."))
 if root_dir not in sys.path:
     sys.path.append(root_dir)
 
-from utils import (
-    PROJECT_PATH,
-    PROJECT_NAME,
-    PREDS_DIR,
-    DATASET_PATH,
-    DATASET_VALIDATION_NAME
-)
+from utils import PROJECT_PATH, PROJECT_NAME, PREDS_DIR  # noqa: E402
 from utils.utils import Logger  # noqa: E402
+from utils.experiment import (  # noqa: E402
+    ID_COL, Q_COL, SQL_COL, LEVEL_COL, DIV_COL, FUNC_COL,
+    load_experiment_config, experiment_dir, build_prompt, prompt_template,
+    load_holdout, dataset_version, extract_sql, build_mlflow_uri, load_run_id,
+)
+import mlflow  # noqa: E402
 
 logger = Logger("predict").setup_logging()
 
@@ -80,8 +80,8 @@ logger = Logger("predict").setup_logging()
 # per experiment lives here as predictions_v{N}.json.
 PREDS_DIR = Path(PREDS_DIR)
 
-# ── Dataset column names (same as the training pipeline) ─────────────────────
-ID_COL, Q_COL, SQL_COL, LEVEL_COL, TRAIN_COL = "id", "question", "sql_code", "level", "train"
+# The experiment config (set in main; the prompt builder reads it).
+CFG: dict = {}
 
 
 @dataclass
@@ -103,9 +103,7 @@ class GenContext:
 # Config / device
 # ═══════════════════════════════════════════════════════════════════════════
 def load_config(experiment_version: int):
-    path = Path(PROJECT_PATH) / "experiments" / f"exp-v{experiment_version}.yaml"
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f), path
+    return load_experiment_config(experiment_version)
 
 
 def setup_device():
@@ -113,8 +111,10 @@ def setup_device():
         logger.info(f"Device: CUDA ({torch.cuda.get_device_name(0)})")
         return torch.device("cuda"), torch.bfloat16
     if torch.backends.mps.is_available():
-        logger.info("Device: MPS (Apple Silicon) -> float32")
-        return torch.device("mps"), torch.float32
+        # Inference in bf16 on Apple Silicon halves the memory of an 8B model
+        # (about 16 GB) so generation can run on the workstation.
+        logger.info("Device: MPS (Apple Silicon) -> bfloat16")
+        return torch.device("mps"), torch.bfloat16
     logger.info("Device: CPU -> float32")
     return torch.device("cpu"), torch.float32
 
@@ -176,18 +176,14 @@ def load_finetuned_model(ctx: GenContext):
 # Prompt + generation (IDENTICAL to finetuning_strategies._build_prompt)
 # ═══════════════════════════════════════════════════════════════════════════
 def build_input(question: str) -> str:
-    # Must match finetuning_strategies._build_prompt exactly (train/inference parity).
-    return f"Pergunta: {question}\nSQL:"
+    # Same template as training (utils.experiment.build_prompt): train/inference parity.
+    return build_prompt(CFG, question)
 
 
 def _clean_sql(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-    return text
+    # The fixed four-step extraction (fences, annotation tags, first WITH/SELECT,
+    # trailing text), identical for the base and the fine-tuned model.
+    return extract_sql(text)
 
 
 @torch.no_grad()
@@ -212,12 +208,15 @@ def predict_batch(tokenizer, model, questions: list[str], ctx: GenContext) -> li
     decoded = tokenizer.batch_decode(gen, skip_special_tokens=True)
 
     tokenizer.padding_side = side
-    return [_clean_sql(d) for d in decoded]
+    return decoded
 
 
-def run_pass(tokenizer, model, validation_data: list[dict], label: str, ctx: GenContext) -> dict:
+def run_pass(tokenizer, model, validation_data: list[dict], label: str, ctx: GenContext):
+    """Returns (extracted_sql_by_id, raw_output_by_id). The raw text is kept so
+    the extraction step can be audited."""
     total = len(validation_data)
     predictions: dict = {}
+    raw: dict = {}
 
     logger.banner(f"{label}  ({total} questions)", width=60)
     for start in range(0, total, ctx.batch_size):
@@ -225,39 +224,30 @@ def run_pass(tokenizer, model, validation_data: list[dict], label: str, ctx: Gen
         ids   = [it[ID_COL] for it in batch]
         qs    = [it[Q_COL] for it in batch]
         try:
-            for vid, sql in zip(ids, predict_batch(tokenizer, model, qs, ctx)):
-                predictions[vid] = sql
+            for vid, text in zip(ids, predict_batch(tokenizer, model, qs, ctx)):
+                raw[vid] = text
+                predictions[vid] = _clean_sql(text)
             logger.info(f"[{min(start + ctx.batch_size, total):>4}/{total}] OK")
         except Exception as exc:
             for vid in ids:
+                raw[vid] = ""
                 predictions[vid] = ""
             logger.error(f"[{start:>4}/{total}] ERROR {exc}", exc_info=True)
-    return predictions
+    return predictions, raw
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Load and normalize the validation set (train == 0)  — same read as training
 # ═══════════════════════════════════════════════════════════════════════════
-def load_validation_data() -> list[dict]:
-    logger.info(f"Reading dataset: {DATASET_VALIDATION_NAME}")
-    df = pl.scan_parquet(f"{DATASET_PATH}/{DATASET_VALIDATION_NAME}").collect()
-
-    # normalize the question column name coming from the original CSV
-    if Q_COL not in df.columns and "pergunta" in df.columns:
-        df = df.rename({"pergunta": Q_COL})
-
-    # filter the holdout
-    if TRAIN_COL in df.columns:
-        df = df.filter(pl.col(TRAIN_COL) == 0)
-        logger.info(f"Filtered train == 0: {len(df)} validation examples.")
-    else:
-        logger.warning("Column 'train' missing — using all rows as validation.")
-
-    cols = [c for c in (ID_COL, Q_COL, SQL_COL, LEVEL_COL) if c in df.columns]
+def load_validation_data(cfg: dict) -> list[dict]:
+    df = load_holdout(cfg)
+    logger.info(f"Holdout [{dataset_version(cfg)}]: {len(df)} validation examples.")
+    cols = [c for c in (ID_COL, Q_COL, SQL_COL, LEVEL_COL, DIV_COL, FUNC_COL) if c in df.columns]
     data = df.select(cols).to_dicts()
-    # ensure expected keys
     for d in data:
         d.setdefault(SQL_COL, "")
         d.setdefault(LEVEL_COL, "")
+        d.setdefault(DIV_COL, "")
+        d.setdefault(FUNC_COL, "")
     return data
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -297,8 +287,9 @@ def main() -> None:
     exp = parser.parse_args().experiment_version
 
     cfg, cfg_path = load_config(exp)
+    CFG.clear(); CFG.update(cfg)
     logger.banner(f"PREDICT | exp=v{exp} | {PROJECT_NAME}", width=60)
-    logger.info(f"config: {cfg_path}")
+    logger.info(f"config: {cfg_path} | prompt: {prompt_template(cfg)!r}")
 
     base_model = cfg["base_model"]
     train_method = str(cfg.get("train_method", "none")).lower()
@@ -313,7 +304,7 @@ def main() -> None:
     logger.info(f"Model: {base_model} | decoder-only | method={train_method}")
 
     # Artifact path mirrors finetuning_strategies.py: <PROJECT_PATH>/models/experiments/v{N}/artifacts
-    artifact_path = Path(PROJECT_PATH) / "models" / "experiments" / f"v{exp}" / "artifacts"
+    artifact_path = experiment_dir(exp) / "artifacts"
 
     ctx = GenContext(
         base_model=base_model,
@@ -325,14 +316,34 @@ def main() -> None:
         input_max_length=int(cfg.get("max_length", 1024)),
     )
 
-    validation_data = load_validation_data()
+    validation_data = load_validation_data(cfg)
     logger.info(f"{len(validation_data)} questions loaded.")
+
+    # ── MLflow: attach to the training run when it exists ────────────────────
+    mlflow.set_tracking_uri(build_mlflow_uri(logger))
+    mlflow.set_experiment(PROJECT_NAME)
+    if mlflow.active_run() is not None:
+        mlflow.end_run()
+    run_id = load_run_id(exp)
+    if run_id:
+        mlflow.start_run(run_id=run_id)
+        logger.info(f"MLflow: attached to training run {run_id}")
+    else:
+        mlflow.start_run(run_name=f"{cfg['model_name']}_{train_method}_v{exp}",
+                         tags={"experiment_version": f"v{exp}", "model_name": cfg["model_name"],
+                               "train_method": train_method, "stage": "generate"})
+        logger.info(f"MLflow: no training run id found for v{exp}; started a new run")
+    mlflow.log_params({"gen_max_new_tokens": ctx.max_new_tokens, "gen_batch_size": ctx.batch_size,
+                       "gen_do_sample": False, "gen_num_beams": 1, "gen_device": str(device),
+                       "gen_dtype": str(dtype), "n_holdout": len(validation_data),
+                       "prompt_template": prompt_template(cfg)})
 
     tokenizer = load_tokenizer(ctx)
 
     # ── Pass 1: base model (no training) ─────────────────────────────────────
     base_model_obj = load_base_model(ctx)
-    base_preds = run_pass(tokenizer, base_model_obj, validation_data, "Pass 1 - base model", ctx)
+    base_preds, base_raw = run_pass(tokenizer, base_model_obj, validation_data,
+                                    "Pass 1 - base model", ctx)
     unload_model(base_model_obj)
 
     # ── Pass 2: fine-tuned model ─────────────────────────────────────────────
@@ -341,11 +352,11 @@ def main() -> None:
     if train_method == "none":
         logger.info("Baseline experiment (train_method=none): no artifact was produced; "
                     "using the Hugging Face hub base model. fine-tuned = base (delta = 0).")
-        finetuned_preds = dict(base_preds)
+        finetuned_preds, finetuned_raw = dict(base_preds), dict(base_raw)
     else:
         finetuned_model = load_finetuned_model(ctx)
-        finetuned_preds = run_pass(tokenizer, finetuned_model, validation_data,
-                                   "Pass 2 - fine-tuned model", ctx)
+        finetuned_preds, finetuned_raw = run_pass(tokenizer, finetuned_model, validation_data,
+                                                  "Pass 2 - fine-tuned model", ctx)
         unload_model(finetuned_model)
 
     # ── Merge + save (gold included, ready for execution scoring) ────────────
@@ -353,10 +364,14 @@ def main() -> None:
         {
             "sql_validation_id":  it[ID_COL],
             "nivel":              it.get(LEVEL_COL, ""),
+            "divisao":            it.get(DIV_COL, ""),
+            "funcao":             it.get(FUNC_COL, ""),
             "question":           it[Q_COL],
             "sql_code_gold":      it.get(SQL_COL, ""),
             "sql_code_base":      base_preds.get(it[ID_COL], ""),
             "sql_code_finetuned": finetuned_preds.get(it[ID_COL], ""),
+            "raw_output_base":      base_raw.get(it[ID_COL], ""),
+            "raw_output_finetuned": finetuned_raw.get(it[ID_COL], ""),
         }
         for it in validation_data
     ]
@@ -367,7 +382,16 @@ def main() -> None:
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    logger.info(f"Done. {len(results)} predictions saved -> {out_path.resolve()}")
+    n_base = sum(1 for r in results if r["sql_code_base"].strip())
+    n_ft = sum(1 for r in results if r["sql_code_finetuned"].strip())
+    n_any = sum(1 for r in results if r["sql_code_base"].strip() or r["sql_code_finetuned"].strip())
+    mlflow.log_metrics({"gen/n_records": len(results), "gen/n_sql_base": n_base,
+                        "gen/n_sql_finetuned": n_ft, "gen/n_sql_any_model": n_any})
+    mlflow.log_artifact(str(out_path), artifact_path="predictions")
+    mlflow.end_run()
+
+    logger.info(f"Done. {len(results)} predictions saved -> {out_path.resolve()} | "
+                f"SQL extracted: base {n_base}, fine-tuned {n_ft}, any {n_any}")
     print_em_summary(results)
 
 

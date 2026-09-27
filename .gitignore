@@ -4,3 +4,9 @@ __pycache__/
 *.log
 .vscode/
 .venv/
+models/
+mlruns/
+*.pt
+*.safetensors
+.env
+archive/
